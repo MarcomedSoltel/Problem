@@ -1,4 +1,4 @@
-﻿@page "/mapa-edicion/{id:int}"
+@page "/mapa-edicion/{id:int}"
 @inject NavigationManager Navigation
 @inject ILogger<SalonModify> Logger
 @inject IJSRuntime JSRuntime
@@ -132,19 +132,19 @@ else
         maxX = 0;
         maxY = 0;
 
-        
+
         if (salonResponse?.dibujos != null && salonResponse.mesas != null)
         {
             foreach (var dibujo in salonResponse.dibujos)
             {
-                
+
                 var salonDetails = salonResponse.mesas
                     .Where(m => m.dibujos == dibujo.dibujos)
                     .ToList();
 
                 foreach (var salonDetail in salonDetails)
                 {
-                    
+
                     var adjustedLeft = (int)(salonDetail.posicionX);
                     var adjustedTop = (int)(salonDetail.posicionY);
 
@@ -163,7 +163,6 @@ else
     {
         await LoadSalonDetail();
         CalculateMaxDimensions();
-        await JSRuntime.InvokeVoidAsync("initializeSortable");
 
     }
 
@@ -221,7 +220,7 @@ else
     private void OnImageClick(int dibujoId)
     {
 
-        Logger.LogWarning($"Image clicked: { dibujoId}");
+        Logger.LogWarning($"Image clicked: {dibujoId}");
 
         hiddenDibujoId = dibujoId;
         StateHasChanged();
@@ -269,17 +268,17 @@ else
     {
         try
         {
-            
+
             await JSRuntime.InvokeVoidAsync("saveNewPositions");
 
             using var client = new HttpClient();
 
-            
+
             if (salonResponse?.dibujos != null)
             {
                 foreach (var dibujo in salonResponse.dibujos)
                 {
-                    
+
                     var detalle = salonResponse.mesas?.FirstOrDefault(m => m.dibujos == dibujo.dibujos);
                     if (detalle != null)
                     {
@@ -306,7 +305,7 @@ else
                 Logger.LogWarning("No se encontraron dibujos en el salón o la respuesta del salón es nula.");
             }
 
-            
+
             Navigation.NavigateTo($"/salonmapa/{id}");
         }
         catch (Exception ex)
@@ -316,6 +315,17 @@ else
     }
 
     public event Action<int, int, int> OnPositionUpdated = delegate { };
+
+
+    // Arrastre
+
+    [JSInvokable("SetDraggingState")]
+    public Task SetDraggingState(bool dragging)
+    {
+        // Lógica para actualizar el estado de arrastre
+        isDragging = dragging;
+        return Task.CompletedTask;
+    }
 
     [JSInvokable("UpdateElementPositionAsync")]
     public async Task UpdateElementPositionAsync(int dibujoId, int newX, int newY)
@@ -351,16 +361,6 @@ else
     }
 
 
-    // Arrastre
-
-    [JSInvokable("SetDraggingState")]
-    public Task SetDraggingState(bool dragging)
-    {
-        // Lógica para actualizar el estado de arrastre
-        isDragging = dragging;
-        return Task.CompletedTask;
-    }
-    
     // Para mostrar mensajes de js en logger
 
     [JSInvokable]
@@ -374,7 +374,7 @@ else
 
 }
 
-    <script>
+<script>
 
 
     window.addEventListener('load', () => {
@@ -420,6 +420,10 @@ else
     };
 
     window.addDraggingClass = (elementId) => {
+
+        DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', true)
+            .catch(error => console.error('Error al actualizar estado de arrastre:', error));
+
         const element = document.getElementById(elementId);
         if (element) {
             element.classList.add("dragging");
@@ -427,7 +431,7 @@ else
     };
 
     window.UpdatePosition = (dibujoId, newX, newY) => {
-        DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPosition', dibujoId, newX, newY)
+        DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPosition', parseInt(dibujoId), newX, newY)
             .then(() => {
                 logMessage(`Posición actualizada para dibujo ID: ${dibujoId}`);
             })
@@ -437,12 +441,11 @@ else
     };
 
     window.initializeSortable = () => {
-        setTimeout(() => {
-
+        const tryInitialize = () => {
             const container = document.querySelector('.zoom-container');
-            logMessage('Container:', container);
-
             if (container) {
+                logMessage('Contenedor encontrado:', container);
+
                 Sortable.create(container, {
                     animation: 150,
                     onStart: () => {
@@ -454,9 +457,8 @@ else
                         const newX = evt.item.offsetLeft;
                         const newY = evt.item.offsetTop;
 
-                        logMessage(`Element ${elementId} moved to X: ${newX}, Y: ${newY}`);
+                        logMessage(`Elemento ${elementId} movido a X: ${newX}, Y: ${newY}`);
 
-                        // Actualizar posición en Blazor
                         DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPositionAsync', parseInt(elementId), newX, newY)
                             .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
 
@@ -465,9 +467,12 @@ else
                     }
                 });
             } else {
-                logMessage('Sortable: el contenedor no se encontró.');
+                logMessage('Sortable: el contenedor no se encontró, reintentando...');
+                setTimeout(tryInitialize, 100); // Reintento después de 100ms
             }
-        }, 100);
+        };
+
+        tryInitialize();
     };
 
     window.updateElementPosition = (elementId, newX, newY) => {
@@ -475,4 +480,4 @@ else
             .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
     };
 
-    </script>
+</script>
