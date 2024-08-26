@@ -125,8 +125,6 @@ else
     private int maxX;
     private int maxY;
 
-    private bool isDragging = false;
-
     private void CalculateMaxDimensions()
     {
         maxX = 0;
@@ -319,8 +317,12 @@ else
 
     // Arrastre
 
+
+
+    public static bool isDragging { get; set; }
+
     [JSInvokable("SetDraggingState")]
-    public Task SetDraggingState(bool dragging)
+    public static Task SetDraggingState(bool dragging)
     {
         // Lógica para actualizar el estado de arrastre
         isDragging = dragging;
@@ -372,6 +374,8 @@ else
     }
 
 
+
+
 }
 
 <script>
@@ -408,7 +412,7 @@ else
     window.saveNewPositions = () => {
         Object.keys(newPositionData).forEach(dibujoId => {
             let position = newPositionData[dibujoId];
-            DotNet.invokeMethodAsync('RMSuit_v2', 'UpdatePosition', parseInt(dibujoId), position.x, position.y)
+            DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPositionAsync', parseInt(dibujoId), position.x, position.y)
                 .then(() => {
                     logMessage(`Posición guardada para Dibujo ID: ${dibujoId}, X: ${position.x}, Y: ${position.y}`);
                 })
@@ -428,16 +432,6 @@ else
         if (element) {
             element.classList.add("dragging");
         }
-    };
-
-    window.UpdatePosition = (dibujoId, newX, newY) => {
-        DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPosition', parseInt(dibujoId), newX, newY)
-            .then(() => {
-                logMessage(`Posición actualizada para dibujo ID: ${dibujoId}`);
-            })
-            .catch(error => {
-                logMessage('Error al actualizar la posición:', error);
-            });
     };
 
     window.initializeSortable = () => {
@@ -479,5 +473,8 @@ else
         DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPositionAsync', parseInt(elementId), newX, newY)
             .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
     };
+
+
+
 
 </script>
