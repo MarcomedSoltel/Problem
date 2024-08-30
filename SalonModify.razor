@@ -82,11 +82,11 @@ else
 
                         var adjustedPosition = (ratioAdjustedTop, ratioAdjustedLeft);
 
-                        Logger.LogInformation($"ID Dibujo: {dibujo.dibujos}, Estado: {dibujo.estado}, Posición Ajustada: (top: {adjustedTop}, left: {adjustedLeft}), Ratio: {ratioPantalla}");
+                       // Logger.LogInformation($"ID Dibujo: {dibujo.dibujos}, Estado: {dibujo.estado}, Posición Ajustada: (top: {adjustedTop}, left: {adjustedLeft}), Ratio: {ratioPantalla}");
 
                         if (dibujo.estado == "D" || !occupiedPositions.Contains(adjustedPosition))
                         {
-                            Logger.LogInformation($"Procesando dibujo con ID: {dibujo.dibujos}, Posición: (top: {adjustedPosition.Item1}, left: {adjustedPosition.Item2})");
+                          //  Logger.LogInformation($"Procesando dibujo con ID: {dibujo.dibujos}, Posición: (top: {adjustedPosition.Item1}, left: {adjustedPosition.Item2})");
                             occupiedPositions.Add(adjustedPosition);
 
                             <div class="drawing-item"
@@ -124,6 +124,9 @@ else
     private int? hiddenDibujoId = null;
     private int maxX;
     private int maxY;
+
+    private DotNetObjectReference<SalonModify>? _dotNetRef;
+
 
     private void CalculateMaxDimensions()
     {
@@ -168,12 +171,29 @@ else
     {
         if (firstRender)
         {
+            _dotNetRef = DotNetObjectReference.Create(this);
+
+
             await Task.Delay(500); // Esperar milisegundos
             ratioPantalla = await CalculateScreenRatio();
 
+            await JSRuntime.InvokeVoidAsync("initializeDotNetObject", _dotNetRef);
             await JSRuntime.InvokeVoidAsync("initializeSortable");
         }
     }
+
+
+#pragma warning disable CS1998
+    public Task DisposeAsync()
+    {
+        if (_dotNetRef != null)
+        {
+            _dotNetRef.Dispose();
+        }
+
+        return Task.CompletedTask;
+    }
+
     private async Task LoadSalonDetail()
     {
         try
@@ -247,13 +267,16 @@ else
             var dibujoId = hiddenDibujoId.Value;
             hiddenDibujoId = null;
 
-            await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", position.x, position.y);
+
 
             Logger.LogInformation($"Dibujo {dibujoId} movido a nueva posición: (x: {position.x}, y: {position.y})");
 
             // Actualizar la posición en el modelo
             await UpdateElementPositionAsync(dibujoId, position.x, position.y);
 
+
+            // Se actualiza visualmente
+            await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", position.x, position.y);
             isDragging = false;
         }
         else
@@ -324,42 +347,75 @@ else
     [JSInvokable("SetDraggingState")]
     public static Task SetDraggingState(bool dragging)
     {
+
+        Console.WriteLine($"Arrancando SetDraggingState");
+
         // Lógica para actualizar el estado de arrastre
         isDragging = dragging;
         return Task.CompletedTask;
     }
 
+    private bool isUpdatingPosition = false;
+
+
     [JSInvokable("UpdateElementPositionAsync")]
     public async Task UpdateElementPositionAsync(int dibujoId, int newX, int newY)
     {
+
+        if (isUpdatingPosition)
+        {
+            Logger.LogInformation($"Evitar bucles infinitos de {dibujoId}.");
+            return;
+        }
+
+        isUpdatingPosition = true;
+        Logger.LogInformation($"Invocado UpdateElementPositionAsync de .NET para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
+
+
         if (salonResponse?.mesas != null)
         {
             var detalle = salonResponse.mesas.FirstOrDefault(m => m.dibujos == dibujoId);
             if (detalle != null)
             {
-                Logger.LogInformation($"Actualizando posición para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
 
-                // Validar y actualizar posición
-                if (newX >= 0 && newY >= 0 && newX <= maxX && newY <= maxY)
+                // Verifica si la nueva posición es diferente a la actual antes de actualizar
+                int currentX = (int)(detalle.posicionX * ratioPantalla);
+                int currentY = (int)(detalle.posicionY * ratioPantalla);
+
+                if (newX != currentX || newY != currentY)
                 {
-                    detalle.posicionX = (int)(newX / ratioPantalla);
-                    detalle.posicionY = (int)(newY / ratioPantalla);
 
-                    // Actualizar en la interfaz de usuario
-                    await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", newX, newY);
+                    Logger.LogInformation($"Actualizando posición para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
 
-                    OnPositionUpdated?.Invoke(dibujoId, newX, newY);
+                    // Validar y actualizar posición
+                    if (newX >= 0 && newY >= 0 && newX <= maxX && newY <= maxY)
+                    {
+                        detalle.posicionX = (int)(newX / ratioPantalla);
+                        detalle.posicionY = (int)(newY / ratioPantalla);
+
+                        // Actualizar en la interfaz de usuario
+                        await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", newX, newY);
+                        OnPositionUpdated?.Invoke(dibujoId, newX, newY);
+
+                    }
+                    else
+                    {
+                        Logger.LogWarning($"Coordenadas fuera de rango para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
+                    }
                 }
+
                 else
                 {
-                    Logger.LogWarning($"Coordenadas fuera de rango para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
+                    Logger.LogInformation($"La posición no cambió para el dibujo ID {dibujoId}. No se requiere actualización.");
                 }
             }
+
             else
             {
                 Logger.LogWarning($"No se encontró un detalle para el dibujo con ID: {dibujoId}");
             }
         }
+        isUpdatingPosition = false;
     }
 
 
@@ -380,8 +436,23 @@ else
 
 <script>
 
+    let dotNetRef = null;
 
+    // Método para inicializar el DotNetObjectReference
+    window.initializeDotNetObject = (dotNetObject) => {
+        dotNetRef = dotNetObject;
+        initializeSortable(); 
+    };
+
+    
+  /*  window.addEventListener('load', () => {
+        if (dotNetRef) {
+            initializeSortable();  // Si DotNetRef ya está disponible, inicia Sortable
+        }
+    });
+    */
     window.addEventListener('load', () => {
+        dotNetRef = dotNetReference;
         initializeSortable();
     });
 
@@ -408,32 +479,6 @@ else
 
         return ratio;
     };
-
-    window.saveNewPositions = () => {
-        Object.keys(newPositionData).forEach(dibujoId => {
-            let position = newPositionData[dibujoId];
-            DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPositionAsync', parseInt(dibujoId), position.x, position.y)
-                .then(() => {
-                    logMessage(`Posición guardada para Dibujo ID: ${dibujoId}, X: ${position.x}, Y: ${position.y}`);
-                })
-                .catch(error => {
-                    logMessage('Error al guardar la posición:', error);
-                });
-        });
-        newPositionData = {};
-    };
-
-    window.addDraggingClass = (elementId) => {
-
-        DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', true)
-            .catch(error => console.error('Error al actualizar estado de arrastre:', error));
-
-        const element = document.getElementById(elementId);
-        if (element) {
-            element.classList.add("dragging");
-        }
-    };
-
     window.initializeSortable = () => {
         const tryInitialize = () => {
             const container = document.querySelector('.zoom-container');
@@ -453,8 +498,10 @@ else
 
                         logMessage(`Elemento ${elementId} movido a X: ${newX}, Y: ${newY}`);
 
-                        DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPositionAsync', parseInt(elementId), newX, newY)
-                            .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
+                        
+                     //   DotNet.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId), newX, newY)
+                        dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId), newX, newY)
+                        .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
 
                         DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', false)
                             .catch(error => logMessage(`Error al actualizar estado de arrastre: ${error}`));
@@ -469,10 +516,55 @@ else
         tryInitialize();
     };
 
+
     window.updateElementPosition = (elementId, newX, newY) => {
-        DotNet.invokeMethodAsync('RMSuit_v2', 'UpdateElementPositionAsync', parseInt(elementId), newX, newY)
-            .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
+
+        const element = document.getElementById(elementId);
+        if (!element) return;
+
+        const currentX = element.offsetLeft;
+        const currentY = element.offsetTop;
+
+        if (currentX !== newX || currentY !== newY) {
+            logMessage(`updateElementPosition desde Javascript: ID=${elementId}, newX=${newX}, newY=${newY}`);
+
+            dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId.replace('dibujo-', '')), newX, newY)
+                .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
+        } else {
+            logMessage(`Posición ya actualizada, omitiendo la invocación para Elemento ID: ${elementId}`);
+        }
     };
+
+    window.addDraggingClass = (elementId) => {
+
+        DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', true)
+            .catch(error => console.error('Error al actualizar estado de arrastre:', error));
+
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.classList.add("dragging");
+        }
+    };
+
+    window.saveNewPositions = () => {
+        Object.keys(newPositionData).forEach(dibujoId => {
+            let position = newPositionData[dibujoId];
+            
+            
+         //   DotNet.invokeMethodAsync('UpdateElementPositionAsync', parseInt(dibujoId), position.x, position.y)
+            dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(dibujoId), position.x, position.y)
+            .then(() => {
+                    logMessage(`Posición guardada para Dibujo ID: ${dibujoId}, X: ${position.x}, Y: ${position.y}`);
+                })
+                .catch(error => {
+                    logMessage('Error al guardar la posición:', error);
+                });
+        });
+        newPositionData = {};
+    };
+
+
+
 
 
 
