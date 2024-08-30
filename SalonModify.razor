@@ -101,6 +101,7 @@ else
                                 {
                                     <p>No hay imagen disponible.</p>
                                 }
+
                             </div>
                         }
                     }
@@ -273,7 +274,7 @@ else
 
             // Actualizar la posición en el modelo
             await UpdateElementPositionAsync(dibujoId, position.x, position.y);
-
+            StateHasChanged();
 
             // Se actualiza visualmente
             await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", position.x, position.y);
@@ -326,7 +327,7 @@ else
                 Logger.LogWarning("No se encontraron dibujos en el salón o la respuesta del salón es nula.");
             }
 
-
+            StateHasChanged();
             Navigation.NavigateTo($"/salonmapa/{id}");
         }
         catch (Exception ex)
@@ -385,7 +386,7 @@ else
                 if (newX != currentX || newY != currentY)
                 {
 
-                    Logger.LogInformation($"Actualizando posición para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
+                    Logger.LogInformation($"Actualizando dibujo ID {dibujoId}: Actual X={currentX}, Actual Y={currentY}, Nueva X={newX}, Nueva Y={newY}");
 
                     // Validar y actualizar posición
                     if (newX >= 0 && newY >= 0 && newX <= maxX && newY <= maxY)
@@ -394,8 +395,11 @@ else
                         detalle.posicionY = (int)(newY / ratioPantalla);
 
                         // Actualizar en la interfaz de usuario
-                        await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", newX, newY);
-                        OnPositionUpdated?.Invoke(dibujoId, newX, newY);
+                       // await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", newX, newY);
+                       // OnPositionUpdated?.Invoke(dibujoId, newX, newY);
+
+                        await JSRuntime.InvokeVoidAsync("updateElementPositionWithoutInvocation", $"dibujo-{dibujoId}", newX, newY);
+                        StateHasChanged();
 
                     }
                     else
@@ -564,7 +568,21 @@ else
     };
 
 
+    window.updateElementPositionWithoutInvocation = (elementId, newX, newY) => {
+        const element = document.getElementById(elementId);
+        if (!element) return;
 
+        const currentX = element.offsetLeft;
+        const currentY = element.offsetTop;
+
+        if (currentX !== newX || currentY !== newY) {
+            logMessage(`updateElementPositionWithoutInvocation desde Javascript: ID=${elementId}, newX=${newX}, newY=${newY}`);
+            element.style.left = `${newX}px`;
+            element.style.top = `${newY}px`;
+        } else {
+            logMessage(`Posición ya actualizada, omitiendo la invocación para Elemento ID: ${elementId}`);
+        }
+    };
 
 
 
