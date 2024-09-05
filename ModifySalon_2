@@ -6,8 +6,6 @@
 @using System.Text.Json
 @using System.Net.Http
 @using RMSuit_v2.Models
-@using Microsoft.AspNetCore.Components.Web
-
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.14.0/Sortable.min.js"></script>
 
@@ -28,14 +26,17 @@
         left: 0;
         width: 100%;
         height: 100%;
+        transform-origin: top left;
+        transition: transform 0.3s;
     }
 
     .drawing-item {
-        position: absolute;
+        position: absolute; 
         width: 100px;
         height: 100px;
         cursor: pointer;
         user-select: none;
+        z-index: 1000; 
     }
 
         .drawing-item img {
@@ -43,6 +44,8 @@
             max-height: 100%;
             width: auto;
             height: auto;
+            /* Transiciones deshabilitadas temporalmente para depurar */
+            /* transition: top 0.2s ease-in-out, left 0.2s ease-in-out; */
         }
 </style>
 
@@ -55,7 +58,7 @@
 else
 {
     <div class="map-container" @onclick="OnMapClick">
-        <div class="zoom-container">
+        <div class="zoom-container" style="transform: scale(1);">
             @if (salonResponse.dibujos != null && salonResponse.dibujos.Any())
             {
                 var orderedDrawings = salonResponse.dibujos
@@ -67,6 +70,8 @@ else
 
                 @foreach (var dibujo in orderedDrawings)
                 {
+                    Logger.LogInformation($"Generando ID para dibujo con ID: {dibujo.dibujos}");
+
                     var salonDetails = salonResponse.mesas
                     .Where(m => m.dibujos == dibujo.dibujos)
                     .ToList();
@@ -76,7 +81,6 @@ else
                         int adjustedLeft = (int)(salonDetail.posicionX);
                         int adjustedTop = (int)(salonDetail.posicionY);
 
-
                         var adjustedPosition = (adjustedTop, adjustedLeft);
 
                         if (dibujo.estado == "D" || !occupiedPositions.Contains(adjustedPosition))
@@ -84,9 +88,9 @@ else
                             occupiedPositions.Add(adjustedPosition);
 
                             <div class="drawing-item"
-                                 style="top:@(adjustedPosition.Item1 + "px"); left:@(adjustedPosition.Item2 + "px");"
-                                 @onclick="() => OnImageClick(dibujo.dibujos)"
-                                 id="dibujo-@dibujo.dibujos">
+                                 style="top:@(adjustedPosition.Item1)px; left:@(adjustedPosition.Item2)px;"
+                                 @onclick="() => OnImageClick(salonDetail.mesa)"
+                                 id="dibujo-@salonDetail.mesa">
                                 @if (!string.IsNullOrEmpty(dibujo.grafico))
                                 {
                                     <img src="data:image/jpeg;base64,@dibujo.grafico" alt="@dibujo.estado" />
@@ -95,10 +99,10 @@ else
                                 {
                                     <p>No hay imagen disponible.</p>
                                 }
-
                             </div>
                         }
                     }
+                
                 }
             }
             else
@@ -211,6 +215,8 @@ else
             {
                 Logger.LogWarning("No se pudieron cargar los detalles del salón. salonResponse es null.");
             }
+
+            StateHasChanged();
         }
         catch (Exception ex)
         {
@@ -244,6 +250,7 @@ else
 
     private async Task OnMapClick(MouseEventArgs e)
     {
+
         Logger.LogWarning($"Map clicked: {e.ClientX}, {e.ClientY}");
 
         if (hiddenDibujoId.HasValue && isDragging)
@@ -252,23 +259,20 @@ else
 
             // Actualizar la posición en la lista de mesas
             var dibujoId = hiddenDibujoId.Value;
-            hiddenDibujoId = null;
-
-
 
             Logger.LogInformation($"Dibujo {dibujoId} movido a nueva posición: (x: {position.x}, y: {position.y})");
 
             // Actualizar la posición en el modelo
             await UpdateElementPositionAsync(dibujoId, position.x, position.y);
+
+            hiddenDibujoId = null;
+            isDragging = false;
+
             StateHasChanged();
 
             // Se actualiza visualmente
             await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", position.x, position.y);
-            isDragging = false;
-
-            await JSRuntime.InvokeVoidAsync("resetTransform");
-            StateHasChanged();
-
+            
         }
         else
         {
@@ -339,7 +343,7 @@ else
     public static Task SetDraggingState(bool dragging)
     {
 
-        Console.WriteLine($"Arrancando SetDraggingState");
+        Console.WriteLine($"Arrancando SetDraggingState. Nuevo estado: {dragging}");
 
         // Lógica para actualizar el estado de arrastre
         isDragging = dragging;
@@ -369,38 +373,46 @@ else
             if (detalle != null)
             {
 
-
-                int currentX = (int)(detalle.posicionX);
-                int currentY = (int)(detalle.posicionY);
+                // Verifica si la nueva posición es diferente a la actual antes de actualizar
+                int currentX = detalle.posicionX;
+                int currentY = detalle.posicionY;
 
                 if (newX != currentX || newY != currentY)
                 {
+
                     Logger.LogInformation($"Actualizando dibujo ID {dibujoId}: Actual X={currentX}, Actual Y={currentY}, Nueva X={newX}, Nueva Y={newY}");
 
+                    // Validar y actualizar posición
                     if (newX >= 0 && newY >= 0 && newX <= maxX && newY <= maxY)
                     {
-                        detalle.posicionX = newX;
-                        detalle.posicionY = newY;
+                        detalle.posicionX = (int)newX;
+                        detalle.posicionY = (int)newY;
+
+                        // Actualizar en la interfaz de usuario
+                        // await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", newX, newY);
+                        // OnPositionUpdated?.Invoke(dibujoId, newX, newY);
 
                         await JSRuntime.InvokeVoidAsync("updateElementPositionWithoutInvocation", $"dibujo-{dibujoId}", newX, newY);
                         StateHasChanged();
+
                     }
                     else
                     {
                         Logger.LogWarning($"Coordenadas fuera de rango para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
                     }
                 }
+
                 else
                 {
                     Logger.LogInformation($"La posición no cambió para el dibujo ID {dibujoId}. No se requiere actualización.");
                 }
             }
+
             else
             {
                 Logger.LogWarning($"No se encontró un detalle para el dibujo con ID: {dibujoId}");
             }
         }
-        StateHasChanged();
         isUpdatingPosition = false;
     }
 
@@ -430,13 +442,13 @@ else
         initializeSortable();
     };
 
-    /*
-      window.addEventListener('load', () => {
+
+    /*  window.addEventListener('load', () => {
           if (dotNetRef) {
               initializeSortable();  // Si DotNetRef ya está disponible, inicia Sortable
           }
-      });*/
-    
+      });
+      */
     window.addEventListener('load', () => {
         dotNetRef = dotNetReference;
         initializeSortable();
@@ -460,24 +472,45 @@ else
 
                 Sortable.create(container, {
                     animation: 150,
-                    onStart: () => {
+                    onStart: (evt) => {
+                        const element = evt.item;
+                        element.classList.add("dragging");
+                        logMessage(`Iniciando arrastre para: ${element.id}`);
                         DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', true)
                             .catch(error => logMessage(`Error al actualizar estado de arrastre: ${error}`));
                     },
                     onEnd: (evt) => {
+                        const element = evt.item;
+                        element.classList.remove("dragging");
                         const elementId = evt.item.id.replace('dibujo-', '');
-                        const newX = evt.item.offsetLeft;
-                        const newY = evt.item.offsetTop;
+
+                        const rect = element.getBoundingClientRect();
+
+                        const container = document.querySelector('.map-container');
+                        const containerRect = container.getBoundingClientRect();
+
+                        // Restar la posición del contenedor para obtener coordenadas relativas
+                        const newX = Math.round(rect.left - containerRect.left);
+                        const newY = Math.round(rect.top - containerRect.top);
 
                         logMessage(`Elemento ${elementId} movido a X: ${newX}, Y: ${newY}`);
 
-
-                        //   DotNet.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId), newX, newY)
                         dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId), newX, newY)
                             .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
 
                         DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', false)
                             .catch(error => logMessage(`Error al actualizar estado de arrastre: ${error}`));
+                    },
+                    onMove: (evt) => {
+                        const element = evt.dragged;
+                        const container = document.querySelector('.map-container');
+                        const containerRect = container.getBoundingClientRect();
+
+                        const newX = Math.round(evt.clientX - containerRect.left - element.offsetWidth / 2);
+                        const newY = Math.round(evt.clientY - containerRect.top - element.offsetHeight / 2);
+
+                        element.style.left = `${newX}px`;
+                        element.style.top = `${newY}px`;
                     }
                 });
             } else {
@@ -503,9 +536,6 @@ else
 
             dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId.replace('dibujo-', '')), newX, newY)
                 .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
-
-            offsetWidth;
-
         } else {
             logMessage(`Posición ya actualizada, omitiendo la invocación para Elemento ID: ${elementId}`);
         }
@@ -518,6 +548,7 @@ else
 
         const element = document.getElementById(elementId);
         if (element) {
+            logMessage(`Dragging iniciado por el elemento: ${elementId}`);  // Depurar ID del elemento
             element.classList.add("dragging");
         }
     };
@@ -544,19 +575,41 @@ else
         const element = document.getElementById(elementId);
         if (!element) return;
 
-        const currentX = element.offsetLeft;
-        const currentY = element.offsetTop;
+        logMessage(`updateElementPositionWithoutInvocation antes de aplicar  y transformación desde Javascript: ID=${elementId}, newX=${newX}, newY=${newY}`);
 
-        if (currentX !== newX || currentY !== newY) {
+        // Ajustar para que las posiciones no sean negativas ni fuera del contenedor
+        newX = Math.max(0, newX);
+        newY = Math.max(0, newY);
+
+        const container = document.querySelector('.map-container');
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+
+        newX = Math.min(newX, containerWidth - element.offsetWidth);
+        newY = Math.min(newY, containerHeight - element.offsetHeight);
+
+        const currentLeft = parseInt(element.style.left, 10);
+        const currentTop = parseInt(element.style.top, 10);
+
+        if (currentLeft !== newX || currentTop !== newY) {
             logMessage(`updateElementPositionWithoutInvocation desde Javascript: ID=${elementId}, newX=${newX}, newY=${newY}`);
+
+
             element.style.left = `${newX}px`;
             element.style.top = `${newY}px`;
 
-            element.offsetWidth;
+            // Forzar redibujo
+            element.style.display = 'none';
+            requestAnimationFrame(() => {
+                element.style.display = '';
+            });
+
+
         } else {
             logMessage(`Posición ya actualizada, omitiendo la invocación para Elemento ID: ${elementId}`);
         }
     };
+
 
 
 
