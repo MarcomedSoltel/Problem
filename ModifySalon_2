@@ -31,12 +31,12 @@
     }
 
     .drawing-item {
-        position: absolute; 
+        position: absolute;
         width: 100px;
         height: 100px;
         cursor: pointer;
         user-select: none;
-        z-index: 1000; 
+        z-index: 1000;
     }
 
         .drawing-item img {
@@ -70,8 +70,6 @@ else
 
                 @foreach (var dibujo in orderedDrawings)
                 {
-                    Logger.LogInformation($"Generando ID para dibujo con ID: {dibujo.dibujos}");
-
                     var salonDetails = salonResponse.mesas
                     .Where(m => m.dibujos == dibujo.dibujos)
                     .ToList();
@@ -102,7 +100,7 @@ else
                             </div>
                         }
                     }
-                
+
                 }
             }
             else
@@ -272,7 +270,7 @@ else
 
             // Se actualiza visualmente
             await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", position.x, position.y);
-            
+
         }
         else
         {
@@ -284,43 +282,46 @@ else
     {
         try
         {
-
+            // Invoca la función JavaScript para guardar las nuevas posiciones en el frontend
             await JSRuntime.InvokeVoidAsync("saveNewPositions");
 
             using var client = new HttpClient();
 
-
-            if (salonResponse?.dibujos != null)
+            if (salonResponse?.mesas != null)
             {
-                foreach (var dibujo in salonResponse.dibujos)
+                // Recorre las mesas en lugar de los dibujos
+                foreach (var salonDetail in salonResponse.mesas)
                 {
 
-                    var detalle = salonResponse.mesas?.FirstOrDefault(m => m.dibujos == dibujo.dibujos);
-                    if (detalle != null)
+                    var dibujoId = salonDetail.mesa;
+
+                    if (salonDetail != null)
                     {
-                        var url = $"https://37.59.32.58:1380/Master/SalonTables/UpdateTablePosition/{id}/{detalle.dibujos}/{detalle.dibujos}?initialCatalog=ELSIFON";
-                        var response = await client.PostAsJsonAsync(url, detalle);
+                        // Genera la URL usando el ID de la mesa en lugar de dibujo.dibujos
+                        var url = $"https://37.59.32.58:1380/Master/SalonTables/UpdateTablePosition/{dibujoId}/{salonDetail.mesa}/{salonDetail.dibujos}?initialCatalog=ELSIFON";
+                        var response = await client.PostAsJsonAsync(url, salonDetail);
 
                         if (response.IsSuccessStatusCode)
                         {
-                            Logger.LogInformation($"Posición actualizada para dibujo ID: {detalle.dibujos}");
+                            Logger.LogInformation($"Posición actualizada para mesa ID: {salonDetail.mesa}");
                         }
                         else
                         {
-                            Logger.LogError($"Error al actualizar la posición para dibujo ID: {detalle.dibujos}");
+                            Logger.LogError($"Error al actualizar la posición para mesa ID: {salonDetail.mesa}");
                         }
                     }
                     else
                     {
-                        Logger.LogWarning($"No se encontró un detalle para el dibujo con ID: {dibujo.dibujos}");
+                        Logger.LogWarning("No se encontró un detalle para la mesa.");
                     }
                 }
             }
             else
             {
-                Logger.LogWarning("No se encontraron dibujos en el salón o la respuesta del salón es nula.");
+                Logger.LogWarning("No se encontraron mesas en el salón o la respuesta del salón es nula.");
             }
 
+            // Actualiza la interfaz de usuario y redirige al mapa del salón
             StateHasChanged();
             Navigation.NavigateTo($"/salonmapa/{id}");
         }
@@ -489,7 +490,6 @@ else
                         const container = document.querySelector('.map-container');
                         const containerRect = container.getBoundingClientRect();
 
-                        // Restar la posición del contenedor para obtener coordenadas relativas
                         const newX = Math.round(rect.left - containerRect.left);
                         const newY = Math.round(rect.top - containerRect.top);
 
@@ -506,11 +506,16 @@ else
                         const container = document.querySelector('.map-container');
                         const containerRect = container.getBoundingClientRect();
 
-                        const newX = Math.round(evt.clientX - containerRect.left - element.offsetWidth / 2);
-                        const newY = Math.round(evt.clientY - containerRect.top - element.offsetHeight / 2);
+                        // Usamos el evento original del mouse para obtener las coordenadas correctas
+                        const mouseEvent = evt.originalEvent;
+                        const newX = Math.round(mouseEvent.clientX - containerRect.left - element.offsetWidth / 2);
+                        const newY = Math.round(mouseEvent.clientY - containerRect.top - element.offsetHeight / 2);
 
+                        // Actualizar la posición del elemento en tiempo real
                         element.style.left = `${newX}px`;
                         element.style.top = `${newY}px`;
+
+                        logMessage(`Moviendo elemento: ${element.id}, X: ${newX}, Y: ${newY}`);
                     }
                 });
             } else {
