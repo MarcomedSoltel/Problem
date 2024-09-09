@@ -44,8 +44,6 @@
             max-height: 100%;
             width: auto;
             height: auto;
-            /* Transiciones deshabilitadas temporalmente para depurar */
-            /* transition: top 0.2s ease-in-out, left 0.2s ease-in-out; */
         }
 </style>
 
@@ -62,8 +60,8 @@ else
             @if (salonResponse.dibujos != null && salonResponse.dibujos.Any())
             {
                 var orderedDrawings = salonResponse.dibujos
+                .Where(d => d.estado == "D" || d.estado == "N")
                 .OrderBy(d => d.estado == "D")
-                .ThenBy(d => d.estado)
                 .ToList();
 
                 var occupiedPositions = new HashSet<(int, int)>();
@@ -81,7 +79,7 @@ else
 
                         var adjustedPosition = (adjustedTop, adjustedLeft);
 
-                        if (dibujo.estado == "D" || !occupiedPositions.Contains(adjustedPosition))
+                        if (!occupiedPositions.Contains(adjustedPosition))
                         {
                             occupiedPositions.Add(adjustedPosition);
 
@@ -390,8 +388,6 @@ else
                         detalle.posicionY = (int)newY;
 
                         // Actualizar en la interfaz de usuario
-                        // await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", newX, newY);
-                        // OnPositionUpdated?.Invoke(dibujoId, newX, newY);
 
                         await JSRuntime.InvokeVoidAsync("updateElementPositionWithoutInvocation", $"dibujo-{dibujoId}", newX, newY);
                         StateHasChanged();
@@ -443,13 +439,6 @@ else
         initializeSortable();
     };
 
-
-    /*  window.addEventListener('load', () => {
-          if (dotNetRef) {
-              initializeSortable();  // Si DotNetRef ya está disponible, inicia Sortable
-          }
-      });
-      */
     window.addEventListener('load', () => {
         dotNetRef = dotNetReference;
         initializeSortable();
@@ -562,8 +551,6 @@ else
         Object.keys(newPositionData).forEach(dibujoId => {
             let position = newPositionData[dibujoId];
 
-
-            //   DotNet.invokeMethodAsync('UpdateElementPositionAsync', parseInt(dibujoId), position.x, position.y)
             dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(dibujoId), position.x, position.y)
                 .then(() => {
                     logMessage(`Posición guardada para Dibujo ID: ${dibujoId}, X: ${position.x}, Y: ${position.y}`);
