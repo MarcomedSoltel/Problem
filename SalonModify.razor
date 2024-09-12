@@ -542,6 +542,7 @@ else
 
     function drop(event) {
         event.preventDefault();
+
         const dibujoId = event.dataTransfer.getData("dibujo-id");
         const isFromDrawingList = event.dataTransfer.getData("is-from-drawing-list");
 
@@ -569,6 +570,7 @@ else
 
                 // Clonar el elemento original
                 const clonedElement = element.cloneNode(true);
+                clonedElement.classList.add('drawing-item');
 
                 // Asignar un nuevo ID único al clon
                 const newDibujoId = `dibujo-list-${Date.now()}`;
@@ -578,6 +580,15 @@ else
                 clonedElement.style.position = 'absolute';
                 clonedElement.style.left = `${adjustedX}px`;
                 clonedElement.style.top = `${adjustedY}px`;
+
+                // Crear y añadir el botón de eliminar al clon
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'delete-button';
+                deleteButton.textContent = 'X';
+                deleteButton.onclick = function () {
+                    zoomContainer.removeChild(clonedElement);
+                };
+                clonedElement.appendChild(deleteButton);
 
                 // Añadir el nuevo elemento al zoom-container
                 zoomContainer.appendChild(clonedElement);
