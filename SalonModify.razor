@@ -37,6 +37,8 @@
         cursor: pointer;
         user-select: none;
         z-index: 1000;
+        /* Asegúrate de que los elementos no se superpongan */
+        overflow: hidden;
     }
 
         .drawing-item img {
@@ -64,6 +66,26 @@
         .drawing-list .list-item {
             pointer-events: auto;
         }
+
+    .delete-button {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background: red;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        text-align: center;
+        line-height: 20px;
+        cursor: pointer;
+        display: none; 
+    }
+
+    .drawing-item:hover .delete-button {
+        display: block; 
+    }
 
 </style>
 
@@ -115,6 +137,8 @@ else
                                 {
                                     <p>No hay imagen disponible.</p>
                                 }
+                                <button class="delete-button" onclick="deleteElement('dibujo-@salonDetail.mesa')">X</button>
+
                             </div>
                         }
                     }
@@ -469,7 +493,11 @@ else
         return Task.CompletedTask;
     }
 
-
+    [JSInvokable]
+    public async Task DeleteElementAsync(int elementId)
+    {
+        // Lógica para eliminar el elemento de la base de datos
+    }
 
 
 }
@@ -561,6 +589,19 @@ else
             // Invocar la actualización en Blazor
             dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(dibujoId), adjustedX, adjustedY)
                 .catch(error => console.log(`Error al actualizar la posición: ${error}`));
+        }
+    }
+
+    function deleteElement(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.remove(); // Elimina el elemento del DOM
+
+            // Llamar al método Blazor para actualizar la base de datos si es necesario
+            if (dotNetRef) {
+                dotNetRef.invokeMethodAsync('DeleteElementAsync', parseInt(elementId.replace('dibujo-', '')))
+                    .catch(error => console.log(`Error al eliminar el elemento: ${error}`));
+            }
         }
     }
 
