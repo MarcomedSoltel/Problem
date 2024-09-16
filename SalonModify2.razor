@@ -97,6 +97,7 @@
 }
 else
 {
+
     <div class="map-container" @onclick="OnMapClick">
         <div class="zoom-container" ondrop="drop(event)" ondragover="allowDrop(event)">
             @if (salonResponse.dibujos != null && salonResponse.dibujos.Any())
@@ -499,28 +500,6 @@ else
         // Lógica para eliminar el elemento de la base de datos
     }
 
-    [JSInvokable]
-    public async Task AddNewElementToZoomContainer(int dibujoId, int x, int y)
-    {
-        // Crear una nueva entrada en la lista de elementos
-        var newItem = new SalonDetail
-            {
-                dibujos = dibujoId,
-                posicionX = x,
-                posicionY = y
-            };
-
-        // Agregar el nuevo elemento a la lista
-        if (salonResponse?.mesas == null)
-        {
-            salonResponse.mesas = new List<SalonDetail>();
-        }
-
-        salonResponse.mesas.Add(newItem);
-
-        // Actualizar la interfaz de usuario si es necesario
-        StateHasChanged();
-    }
 
 }
 
@@ -537,14 +516,6 @@ else
     window.addEventListener('load', () => {
         dotNetRef = dotNetReference;
         initializeSortable();
-
-        // Asegurar que el map-container permita dropear elementos
-        const mapContainer = document.querySelector('.map-container');
-        if (mapContainer) {
-            mapContainer.addEventListener('drop', drop);
-            mapContainer.addEventListener('dragover', allowDrop);
-        }
-
     });
 
     function logMessage(message) {
@@ -563,17 +534,9 @@ else
 
     function drag(event) {
         event.stopPropagation(); // Previene el arrastre del contenedor padre.
-
-        logMessage('Elemento arrastrado:', event.target);
-        logMessage('Atributos del elemento arrastrado:', event.target.attributes);
-
         const isFromDrawingList = event.target.closest('.drawing-list') ? 'true' : 'false';
-
-        const dibujoId = event.target.getAttribute("data-dibujo-id");
-        logMessage('dibujo-id en drag:', dibujoId);
-
-        event.dataTransfer.setData("is-from-drawing-list", isFromDrawingList);
-        event.dataTransfer.setData("dibujo-id", dibujoId);
+        event.dataTransfer.setData("is-from-drawing-list", isFromDrawingList); // Indica si el arrastre proviene del drawing-list.
+        event.dataTransfer.setData("dibujo-id", event.target.getAttribute("data-dibujo-id"));
         event.dataTransfer.setData("offsetX", event.clientX - event.target.getBoundingClientRect().left);
         event.dataTransfer.setData("offsetY", event.clientY - event.target.getBoundingClientRect().top);
     }
@@ -581,38 +544,67 @@ else
     function drop(event) {
         event.preventDefault();
 
-        const dibujoId = event.dataTransfer.getData("text/plain");
-        if (!dibujoId) {
-            console.error("No se encontró el ID del dibujo en dataTransfer.");
+        const dibujoId = event.dataTransfer.getData("dibujo-id");
+        const dibujoIdNumerico = parseInt(dibujoId.replace('dibujo-list-', ''), 10);
+        if (isNaN(dibujoIdNumerico)) {
+            logMessage(`Error: dibujoId no válido: ${dibujoId}`);
             return;
         }
+        logMessage(`Enhorabuena! dibujoId válido: ${dibujoIdNumerico}`);
 
-        // Obtén las coordenadas del lugar donde se soltó el elemento
-        const rect = event.target.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        const isFromDrawingList = event.dataTransfer.getData("is-from-drawing-list");
+        const offsetX = parseInt(event.dataTransfer.getData("offsetX"), 10);
+        const offsetY = parseInt(event.dataTransfer.getData("offsetY"), 10);
+        const x = event.clientX - offsetX;
+        const y = event.clientY - offsetY;
 
-        // Aquí puedes añadir un nuevo elemento al DOM
-        // Suponiendo que ya tienes el método para crear un nuevo elemento
-        createNewDrawingItem(dibujoId, x, y);
+        const element = document.querySelector(`#dibujo-list-${dibujoIdNumerico}`);
+        if (element) {
+            logMessage(`Enhorabuena! element válido: ${element}`);
+            const mapContainer = document.querySelector('.map-container');
+            const containerRect = mapContainer.getBoundingClientRect();
 
-        // Llama al método de Blazor para actualizar la lista de elementos
-        DotNet.invokeMethodAsync('RMSuit_v2', 'AddNewElementToZoomContainer', dibujoId, x, y)
-            .catch(error => console.error("Error al invocar el método Blazor: ", error));
-    }
+            const adjustedX = Math.round(x - containerRect.left);
+            const adjustedY = Math.round(y - containerRect.top);
 
-    function createNewDrawingItem(dibujoId, x, y) {
-        // Aquí deberías crear un nuevo elemento y añadirlo al DOM
-        const newItem = document.createElement('div');
-        newItem.className = 'drawing-item';
-        newItem.style.top = `${y}px`;
-        newItem.style.left = `${x}px`;
-        newItem.id = `dibujo-${dibujoId}`;
+            if (isFromDrawingList === 'true') {
+                const zoomContainer = document.querySelector('.zoom-container');
 
-        // Agrega el contenido del nuevo elemento (imagen, etc.)
-        // Aquí deberías obtener el gráfico del dibujo y agregarlo al newItem
+                const clonedElement = element.cloneNode(true);
+                clonedElement.classList.add('drawing-item');
 
-        document.querySelector('.zoom-container').appendChild(newItem);
+                const newDibujoId = `dibujo-list-${Date.now()}`;
+                clonedElement.id = newDibujoId;
+
+                console.log('Timestamp actual:', Date.now());
+                console.log('Nuevo ID del elemento clonado:', newDibujoId);
+
+                clonedElement.style.position = 'absolute';
+                clonedElement.style.left = `${adjustedX}px`;
+                clonedElement.style.top = `${adjustedY}px`;
+
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'delete-button';
+                deleteButton.textContent = 'X';
+                deleteButton.onclick = function () {
+                    zoomContainer.removeChild(clonedElement);
+                };
+                clonedElement.appendChild(deleteButton);
+
+                zoomContainer.appendChild(clonedElement);
+
+                clonedElement.addEventListener("dragstart", drag);
+            }
+
+            logMessage('Invocando método Blazor con:', {
+                dibujoIdNumerico: dibujoIdNumerico,
+                adjustedX: adjustedX,
+                adjustedY: adjustedY
+            });
+
+            dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', dibujoIdNumerico, adjustedX, adjustedY)
+                .catch(error => console.log(`Error al actualizar la posición: ${error}`));
+        }
     }
 
     function deleteElement(elementId) {
@@ -623,7 +615,7 @@ else
             // Llamar al método Blazor para actualizar la base de datos si es necesario
             if (dotNetRef) {
                 dotNetRef.invokeMethodAsync('DeleteElementAsync', parseInt(elementId.replace('dibujo-', '')))
-                    .catch(error => logMessage(`Error al eliminar el elemento: ${error}`));
+                    .catch(error => console.log(`Error al eliminar el elemento: ${error}`));
             }
         }
     }
