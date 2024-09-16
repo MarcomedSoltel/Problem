@@ -11,26 +11,17 @@
 
 
 <style>
-
-    .container {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start; 
-        padding: 10px;
-    }
-
     .map-container {
         position: relative;
-        width: 100vw;
-        height: 100vh;
+        width: 100%;
+        height: 700px;
         border: 1px solid #ccc;
         overflow: hidden;
         background-color: #b8b8b8;
     }
 
     .zoom-container {
-        position: relative;
-        overflow: visible;
+        position: absolute;
         top: 0;
         left: 0;
         width: 100%;
@@ -46,33 +37,54 @@
         cursor: pointer;
         user-select: none;
         z-index: 1000;
+        /* Asegúrate de que los elementos no se superpongan */
+        overflow: hidden;
     }
 
-    .drawing-item img {
+        .drawing-item img {
             max-width: 100%;
             max-height: 100%;
             width: auto;
             height: auto;
-    }
+        }
 
     .drawing-list {
-        width: 20%;
-        float: right;
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 150px;
+        max-height: 100%;
+        overflow-y: auto;
+        background-color: #b8b8b8;
+        border-left: 1px solid #ccc;
+        z-index: 100;
         padding: 10px;
-        background-color: #f4f4f4;
-        border: 1px solid #ccc;
-        height: 700px;
-        overflow-y: scroll;
+        cursor: move;
+        pointer-events: none;
     }
 
-    .zoom-container.highlight {
-        border: 2px dashed #00aaff;
+        .drawing-list .list-item {
+            pointer-events: auto;
+        }
+
+    .delete-button {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background: red;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        text-align: center;
+        line-height: 20px;
+        cursor: pointer;
+        display: none;
     }
 
-    #drag-preview {
-        opacity: 0.7;
-        transform: translate(-50%, -50%);
-        width: 100px;
+    .drawing-item:hover .delete-button {
+        display: block;
     }
 
 </style>
@@ -85,85 +97,77 @@
 }
 else
 {
+    <div class="map-container" @onclick="OnMapClick">
+        <div class="zoom-container" ondrop="drop(event)" ondragover="allowDrop(event)">
+            @if (salonResponse.dibujos != null && salonResponse.dibujos.Any())
+            {
+                var orderedDrawings = salonResponse.dibujos
+                .Where(d => d.estado == "D" || d.estado == "N")
+                .OrderBy(d => d.estado == "D")
+                .ToList();
 
-    <div class="container">
+                var occupiedPositions = new HashSet<(int, int)>();
 
-        <div class="map-container" @onclick="OnMapClick">
-            <div class="zoom-container" ondrop="drop(event)" ondragover="allowDrop(event)">
-                @if (salonResponse.dibujos != null && salonResponse.dibujos.Any())
+                @foreach (var dibujo in orderedDrawings)
                 {
-                    var orderedDrawings = salonResponse.dibujos
-                    .Where(d => d.estado == "D" || d.estado == "N")
-                    .OrderBy(d => d.estado == "D")
+                    var salonDetails = salonResponse.mesas
+                    .Where(m => m.dibujos == dibujo.dibujos)
                     .ToList();
 
-                    var occupiedPositions = new HashSet<(int, int)>();
-
-                    @foreach (var dibujo in orderedDrawings)
+                    foreach (var salonDetail in salonDetails)
                     {
-                        var salonDetails = salonResponse.mesas
-                        .Where(m => m.dibujos == dibujo.dibujos)
-                        .ToList();
+                        int adjustedLeft = (int)(salonDetail.posicionX);
+                        int adjustedTop = (int)(salonDetail.posicionY);
 
-                        foreach (var salonDetail in salonDetails)
+                        var adjustedPosition = (adjustedTop, adjustedLeft);
+
+                        if (!occupiedPositions.Contains(adjustedPosition))
                         {
-                            int adjustedLeft = (int)(salonDetail.posicionX);
-                            int adjustedTop = (int)(salonDetail.posicionY);
+                            occupiedPositions.Add(adjustedPosition);
 
-                            var adjustedPosition = (adjustedTop, adjustedLeft);
+                            <div class="drawing-item"
+                                 style="top:@(adjustedPosition.Item1)px; left:@(adjustedPosition.Item2)px;"
+                                 @onclick="() => OnImageClick(salonDetail.mesa)"
+                                 id="dibujo-@salonDetail.mesa">
+                                @if (!string.IsNullOrEmpty(dibujo.grafico))
+                                {
+                                    <img src="data:image/jpeg;base64,@dibujo.grafico" alt="@dibujo.estado" />
+                                }
+                                else
+                                {
+                                    <p>No hay imagen disponible.</p>
+                                }
+                                <button class="delete-button" onclick="deleteElement('dibujo-@salonDetail.mesa')">X</button>
 
-                            if (!occupiedPositions.Contains(adjustedPosition))
-                            {
-                                occupiedPositions.Add(adjustedPosition);
-
-                                <div class="drawing-item"
-                                     style="top:@(adjustedPosition.Item1)px; left:@(adjustedPosition.Item2)px;"
-                                     @onclick="() => OnImageClick(salonDetail.mesa)"
-                                     id="dibujo-@salonDetail.mesa">
-                                    @if (!string.IsNullOrEmpty(dibujo.grafico))
-                                    {
-                                        <img src="data:image/jpeg;base64,@dibujo.grafico" alt="@dibujo.estado" />
-                                    }
-                                    else
-                                    {
-                                        <p>No hay imagen disponible.</p>
-                                    }
-                                </div>
-                            }
+                            </div>
                         }
-
                     }
-                }
-                else
-                {
-                    <p>No se encontraron dibujos para este salón.</p>
-                }
-            </div>
-        </div>
-
-        <div class="drawing-list">
-            <h4>Dibujos disponibles</h4>
-            @if (salonResponse?.dibujos != null)
-            {
-                @foreach (var dibujo in salonResponse.dibujos.DistinctBy(d => d.dibujos).Where(d => d.estado == "N" || d.estado == "D"))
-                {
-                    <div class="list-item" id="dibujo-list-@dibujo.dibujos" draggable="true" ondragstart="drag(event)" data-dibujo-id="@dibujo.dibujos">
-                        @if (!string.IsNullOrEmpty(dibujo.grafico))
-                        {
-                            <img src="data:image/jpeg;base64,@dibujo.grafico" alt="@dibujo.estado" />
-                            <p>@dibujo.dibujos</p>
-                        }
-                        else
-                        {
-                            <p>No hay imagen disponible.</p>
-                        }
-                    </div>
                 }
             }
             else
             {
-                <p>No hay dibujos disponibles.</p>
+                <p>No se encontraron dibujos para este salón.</p>
             }
+
+            <div class="drawing-list">
+                <h4>Lista de añadido de mesas</h4>
+                @if (salonResponse?.dibujos != null)
+                {
+                    @foreach (var dibujo in salonResponse.dibujos.DistinctBy(d => d.dibujos).Where(d => d.estado == "N" || d.estado == "D"))
+                    {
+                        <div class="list-item" id="dibujo-list-@dibujo.dibujos" draggable="true" ondragstart="drag(event)" data-dibujo-id="@dibujo.dibujos">
+                            @if (!string.IsNullOrEmpty(dibujo.grafico))
+                            {
+                                <img src="data:image/jpeg;base64,@dibujo.grafico" alt="@dibujo.estado" />
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p>No hay dibujos disponibles.</p>
+                }
+            </div>
         </div>
     </div>
 }
@@ -229,10 +233,8 @@ else
 
             await Task.Delay(500); // Esperar milisegundos
 
-            await JSRuntime.InvokeVoidAsync("initializeDotNetObject", DotNetObjectReference.Create(this));
+            await JSRuntime.InvokeVoidAsync("initializeDotNetObject", _dotNetRef);
             await JSRuntime.InvokeVoidAsync("initializeSortable");
-            await JSRuntime.InvokeVoidAsync("initializeSortableForDrawings");
-
         }
     }
 
@@ -423,6 +425,12 @@ else
             return;
         }
 
+        if (newX < 0 || newY < 0)
+        {
+            Console.WriteLine($"Error: coordenadas no válidas - X: {newX}, Y: {newY}");
+            return;
+        }
+
         isUpdatingPosition = true;
         Logger.LogInformation($"Invocado UpdateElementPositionAsync de .NET para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
 
@@ -486,14 +494,35 @@ else
     }
 
     [JSInvokable]
-    public void ActualizarMapa()
+    public async Task DeleteElementAsync(int elementId)
     {
+        // Lógica para eliminar el elemento de la base de datos
+    }
+
+    [JSInvokable]
+    public async Task AddNewElementToZoomContainer(int dibujoId, int x, int y)
+    {
+        // Crear una nueva entrada en la lista de elementos
+        var newItem = new SalonDetail
+            {
+                dibujos = dibujoId,
+                posicionX = x,
+                posicionY = y
+            };
+
+        // Agregar el nuevo elemento a la lista
+        if (salonResponse?.mesas == null)
+        {
+            salonResponse.mesas = new List<SalonDetail>();
+        }
+
+        salonResponse.mesas.Add(newItem);
+
+        // Actualizar la interfaz de usuario si es necesario
         StateHasChanged();
     }
 
-
 }
-
 
 <script>
 
@@ -501,21 +530,21 @@ else
 
     // Método para inicializar el DotNetObjectReference
     window.initializeDotNetObject = (dotNetObject) => {
-        logMessage('initializeDotNetObject llamado');
         dotNetRef = dotNetObject;
-
-        if (dotNetRef) {
-            initializeSortable();
-            initializeSortableForDrawings();
-        } else {
-            logMessage('dotNetRef no está definido.');
-        }
-
+        initializeSortable();
     };
 
     window.addEventListener('load', () => {
         dotNetRef = dotNetReference;
         initializeSortable();
+
+        // Asegurar que el map-container permita dropear elementos
+        const mapContainer = document.querySelector('.map-container');
+        if (mapContainer) {
+            mapContainer.addEventListener('drop', drop);
+            mapContainer.addEventListener('dragover', allowDrop);
+        }
+
     });
 
     function logMessage(message) {
@@ -526,6 +555,77 @@ else
             .catch(error => {
                 console.error('Error al registrar el mensaje:', error);
             });
+    }
+
+    function allowDrop(event) {
+        event.preventDefault();
+    }
+
+    function drag(event) {
+        event.stopPropagation(); // Previene el arrastre del contenedor padre.
+
+        logMessage('Elemento arrastrado:', event.target);
+        logMessage('Atributos del elemento arrastrado:', event.target.attributes);
+
+        const isFromDrawingList = event.target.closest('.drawing-list') ? 'true' : 'false';
+
+        const dibujoId = event.target.getAttribute("data-dibujo-id");
+        logMessage('dibujo-id en drag:', dibujoId);
+
+        event.dataTransfer.setData("is-from-drawing-list", isFromDrawingList);
+        event.dataTransfer.setData("dibujo-id", dibujoId);
+        event.dataTransfer.setData("offsetX", event.clientX - event.target.getBoundingClientRect().left);
+        event.dataTransfer.setData("offsetY", event.clientY - event.target.getBoundingClientRect().top);
+    }
+
+    function drop(event) {
+        event.preventDefault();
+
+        const dibujoId = event.dataTransfer.getData("text/plain");
+        if (!dibujoId) {
+            console.error("No se encontró el ID del dibujo en dataTransfer.");
+            return;
+        }
+
+        // Obtén las coordenadas del lugar donde se soltó el elemento
+        const rect = event.target.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        // Aquí puedes añadir un nuevo elemento al DOM
+        // Suponiendo que ya tienes el método para crear un nuevo elemento
+        createNewDrawingItem(dibujoId, x, y);
+
+        // Llama al método de Blazor para actualizar la lista de elementos
+        DotNet.invokeMethodAsync('RMSuit_v2', 'AddNewElementToZoomContainer', dibujoId, x, y)
+            .catch(error => console.error("Error al invocar el método Blazor: ", error));
+    }
+
+    function createNewDrawingItem(dibujoId, x, y) {
+        // Aquí deberías crear un nuevo elemento y añadirlo al DOM
+        const newItem = document.createElement('div');
+        newItem.className = 'drawing-item';
+        newItem.style.top = `${y}px`;
+        newItem.style.left = `${x}px`;
+        newItem.id = `dibujo-${dibujoId}`;
+
+        // Agrega el contenido del nuevo elemento (imagen, etc.)
+        // Aquí deberías obtener el gráfico del dibujo y agregarlo al newItem
+
+        document.querySelector('.zoom-container').appendChild(newItem);
+    }
+
+    function deleteElement(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.remove(); // Elimina el elemento del DOM
+
+            // Llamar al método Blazor para actualizar la base de datos si es necesario
+            if (dotNetRef) {
+                dotNetRef.invokeMethodAsync('DeleteElementAsync', parseInt(elementId.replace('dibujo-', '')))
+                    .catch(error => logMessage(`Error al eliminar el elemento: ${error}`));
+            }
+        }
     }
 
     window.initializeSortable = () => {
@@ -550,80 +650,35 @@ else
 
                         const rect = element.getBoundingClientRect();
 
-                        const container = document.querySelector('.zoom-container');
-                        const containerRect = container ? container.getBoundingClientRect() : null;
+                        const container = document.querySelector('.map-container');
+                        const containerRect = container.getBoundingClientRect();
 
+                        const newX = Math.round(rect.left - containerRect.left);
+                        const newY = Math.round(rect.top - containerRect.top);
 
-                        if (containerRect) {
-                            const newX = Math.round(rect.left - containerRect.left);
-                            const newY = Math.round(rect.top - containerRect.top);
+                        logMessage(`Elemento ${elementId} movido a X: ${newX}, Y: ${newY}`);
 
-                            logMessage(`Elemento ${elementId} movido a X: ${newX}, Y: ${newY}`);
+                        dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId), newX, newY)
+                            .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
 
-                            dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId), newX, newY)
-                                .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
-
-                            DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', false)
-                                .catch(error => logMessage(`Error al actualizar estado de arrastre: ${error}`));
-                        } else {
-                            logMessage('Error: map-container no encontrado o sin dimensiones.');
-                        }
+                        DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', false)
+                            .catch(error => logMessage(`Error al actualizar estado de arrastre: ${error}`));
                     },
                     onMove: (evt) => {
                         const element = evt.dragged;
                         const container = document.querySelector('.map-container');
                         const containerRect = container.getBoundingClientRect();
 
-                        const mouseEvent = evt.originalEvent || evt;
+                        // Usamos el evento original del mouse para obtener las coordenadas correctas
+                        const mouseEvent = evt.originalEvent;
                         const newX = Math.round(mouseEvent.clientX - containerRect.left - element.offsetWidth / 2);
                         const newY = Math.round(mouseEvent.clientY - containerRect.top - element.offsetHeight / 2);
 
-                        // Verificar que las nuevas coordenadas son válidas antes de aplicar
-                        if (newX >= 0 && newY >= 0) {
-                            element.style.left = `${newX}px`;
-                            element.style.top = `${newY}px`;
+                        // Actualizar la posición del elemento en tiempo real
+                        element.style.left = `${newX}px`;
+                        element.style.top = `${newY}px`;
 
-                            logMessage(`Moviendo elemento: ${element.id}, X: ${newX}, Y: ${newY}`);
-                        } else {
-                            logMessage('Error: Coordenadas de arrastre inválidas.');
-                        }
-                    },
-                    onAdd: function (evt) {
-                        const itemEl = evt.item;
-                        const dibujoId = itemEl.id.replace('dibujo-list-', '');
-
-                        itemEl.removeAttribute('draggable');
-                        itemEl.style.position = 'absolute';
-                        itemEl.style.cursor = 'move';
-
-                        // Obtener las coordenadas del evento de arrastre y soltado
-                        const containerRect = mapContainer.getBoundingClientRect();
-                        const mouseX = evt.originalEvent.clientX || evt.clientX;
-                        const mouseY = evt.originalEvent.clientY || evt.clientY;
-
-                        // Calcular la posición relativa al contenedor
-                        const relativeX = mouseX - containerRect.left;
-                        const relativeY = mouseY - containerRect.top;
-
-                        // Asignar las coordenadas al elemento
-                        itemEl.style.left = `${relativeX}px`;
-                        itemEl.style.top = `${relativeY}px`;
-
-                        logMessage(`Dibujo ${dibujoId} añadido al mapa en las coordenadas X: ${itemEl.style.left}, Y: ${itemEl.style.top}.`);
-
-                        // Re-inicializar Sortable para el nuevo elemento
-                        initializeSortable();  // Esto se asegura que el nuevo elemento es arrastrable
-
-                        // Verifica si dotNetRef está definido antes de llamar a invokeMethodAsync
-                        if (dotNetRef) {
-                            dotNetRef.invokeMethodAsync('ActualizarMapa')
-                                .then(() => {
-                                    logMessage('Mapa actualizado.');
-                                })
-                                .catch(error => logMessage('Error al actualizar el mapa:', error));
-                        } else {
-                            logMessage('dotNetRef no está definido.');
-                        }
+                        logMessage(`Moviendo elemento: ${element.id}, X: ${newX}, Y: ${newY}`);
                     }
                 });
             } else {
@@ -657,7 +712,7 @@ else
     window.addDraggingClass = (elementId) => {
 
         DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', true)
-            .catch(error => logMessage('Error al actualizar estado de arrastre:', error));
+            .catch(error => console.error('Error al actualizar estado de arrastre:', error));
 
         const element = document.getElementById(elementId);
         if (element) {
@@ -722,117 +777,6 @@ else
     };
 
 
-    // Para añadir mesas
 
-    window.initializeSortableForDrawings = () => {
-        const mapContainer = document.querySelector('.map-container');
-        const drawingList = document.querySelector('.drawing-list');
-
-        if (mapContainer && drawingList) {
-            Sortable.create(drawingList, {
-                group: {
-                    name: "drawings",
-                    pull: "clone",
-                    put: false
-                },
-                sort: false
-            });
-
-            Sortable.create(mapContainer, {
-                group: "drawings",
-                animation: 150,
-                onAdd: function (evt) {
-                    const itemEl = evt.item;
-                    const dibujoId = itemEl.id = `dibujo-${Date.now()}`;
-
-                    itemEl.removeAttribute('draggable');
-                    itemEl.style.position = 'absolute';
-                    itemEl.style.cursor = 'move';
-
-                    // Obtener las coordenadas del evento de arrastre y soltado
-                    const containerRect = mapContainer.getBoundingClientRect();
-                    const mouseX = evt.originalEvent ? evt.originalEvent.clientX : evt.clientX;
-                    const mouseY = evt.originalEvent ? evt.originalEvent.clientY : evt.clientY;
-
-                    // Calcular la posición relativa al contenedor
-                    const relativeX = mouseX - containerRect.left;
-                    const relativeY = mouseY - containerRect.top;
-
-                    // Asignar las coordenadas al elemento
-                    itemEl.style.left = `${relativeX}px`;
-                    itemEl.style.top = `${relativeY}px`;
-
-                    // Re-inicializar Sortable para zoom-container, enfocándose en el nuevo elemento
-                    const zoomContainer = document.querySelector('.zoom-container');
-                    Sortable.create(zoomContainer, {
-                        animation: 150,
-                        draggable: '.dragging', // Ajustar para elementos dentro del zoom-container
-                        onEnd: (evt) => {
-                            // Lógica para manejar la finalización del arrastre dentro del zoom-container
-                        }
-                    });
-
-                    logMessage(`Dibujo ${dibujoId} añadido al mapa en las coordenadas X: ${itemEl.style.left}, Y: ${itemEl.style.top}.`);
-
-                    // Actualiza el mapa en .NET
-                    if (dotNetRef) {
-                        dotNetRef.invokeMethodAsync('ActualizarMapa')
-                            .then(() => {
-                                logMessage('Mapa actualizado.');
-                            })
-                            .catch(error => logMessage('Error al actualizar el mapa:', error));
-                    }
-
-                    initializeSortable();
-                },
-                onEnd: (evt) => {
-                    const movedElement = evt.item;
-                    const dibujoId = movedElement.id.replace('dibujo-', '');
-
-                    const rect = movedElement.getBoundingClientRect();
-                    const containerRect = document.querySelector('.zoom-container').getBoundingClientRect();
-
-                    // Calcular la posición relativa dentro del contenedor
-                    let newX = Math.round(rect.left - containerRect.left);
-                    let newY = Math.round(rect.top - containerRect.top);
-
-                    // Asegurarse de que las coordenadas sean números válidos
-                    if (newX < 0 || newY < 0 || isNaN(newX) || isNaN(newY)) {
-                        logMessage('Error: Coordenadas calculadas inválidas.');
-                        return;
-                    }
-
-                    // Redondear las coordenadas
-                    newX = Math.round(newX);
-                    newY = Math.round(newY);
-
-                    logMessage(`Rect del elemento: left=${rect.left}, top=${rect.top}, width=${rect.width}, height=${rect.height}`);
-                    logMessage(`Rect del contenedor: left=${containerRect.left}, top=${containerRect.top}, width=${containerRect.width}, height=${containerRect.height}`);
-                    logMessage(`Valores enviados a .NET: newX=${newX}, newY=${newY}`);
-
-                    // Enviar los valores a .NET
-                    dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', dibujoIdParsed, newX, newY)
-                        .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
-
-                    initializeSortable();
-                }
-            });
-        }
-    };
-
-   
-    // Resalta el contenedor al arrastrar un elemento sobre él
-    function highlightDropZone(ev) {
-        ev.preventDefault();
-        var zoomContainer = ev.target;
-        zoomContainer.classList.add('highlight');
-    }
-
-    // Elimina el resaltado cuando el elemento sale del contenedor
-    function unhighlightDropZone(ev) {
-        ev.preventDefault();
-        var zoomContainer = ev.target;
-        zoomContainer.classList.remove('highlight');
-    }
 
 </script>
