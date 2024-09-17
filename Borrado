@@ -90,12 +90,14 @@
 </style>
 
 <h3>Mapa del Salón</h3>
+
 @if (salonResponse == null)
 {
     <p>Cargando detalles del salón...</p>
 }
 else
 {
+
     <div class="map-container" @onclick="OnMapClick">
         <div class="zoom-container" ondrop="drop(event)" ondragover="allowDrop(event)">
             @if (salonResponse.dibujos != null && salonResponse.dibujos.Any())
@@ -125,8 +127,8 @@ else
                             occupiedPositions.Add(adjustedPosition);
 
                             <div class="drawing-item"
-                                 style="top:@($"{adjustedPosition.Item1}px"); left:@($"{adjustedPosition.Item2}px");"
-                                 @onclick="() => OnImageClick(dibujo.dibujos, salonDetail.mesa)"
+                                 style="top:@(adjustedPosition.Item1)px; left:@(adjustedPosition.Item2)px;"
+                                 @onclick="() => OnImageClick(salonDetail.mesa)"
                                  id="dibujo-@salonDetail.mesa">
                                 @if (!string.IsNullOrEmpty(dibujo.grafico))
                                 {
@@ -137,6 +139,7 @@ else
                                     <p>No hay imagen disponible.</p>
                                 }
                                 <button class="delete-button" onclick="deleteElement('dibujo-@salonDetail.mesa')">X</button>
+
                             </div>
                         }
                     }
@@ -170,7 +173,6 @@ else
     </div>
 }
 
-
 <button @onclick="GuardarCambios">Guardar Cambios</button>
 <button @onclick="Cancelar">Cancelar</button>
 
@@ -178,7 +180,6 @@ else
     [Parameter] public int id { get; set; }
     private SalonResponse? salonResponse;
     private int? hiddenDibujoId = null;
-    private int? hiddenMesaId = null;
     private int maxX;
     private int maxY;
 
@@ -288,14 +289,12 @@ else
         Navigation.NavigateTo($"/salonmapa/{id}");
     }
 
-    private void OnImageClick(int dibujoId, int salonId)
+    private void OnImageClick(int dibujoId)
     {
 
-        Logger.LogInformation($"Imagen clickeada: DibujoID={dibujoId}, SalonID={salonId}");
-
+        Logger.LogWarning($"Image clicked: {dibujoId}");
 
         hiddenDibujoId = dibujoId;
-        hiddenMesaId = salonId;
         StateHasChanged();
     }
 
@@ -311,19 +310,20 @@ else
 
     private async Task OnMapClick(MouseEventArgs e)
     {
+
         Logger.LogWarning($"Map clicked: {e.ClientX}, {e.ClientY}");
 
-        if (hiddenDibujoId.HasValue && hiddenMesaId.HasValue && isDragging)
+        if (hiddenDibujoId.HasValue && isDragging)
         {
             var position = await JSRuntime.InvokeAsync<(int x, int y)>("getMousePosition", e.ClientX, e.ClientY);
 
-            var uniqueId = hiddenDibujoId.Value;  // Usa el ID único (salonDetail.mesa)
-            var dibujoId = hiddenMesaId.Value; // Usa el ID de dibujos
+            // Actualizar la posición en la lista de mesas
+            var dibujoId = hiddenDibujoId.Value;
 
-            Logger.LogInformation($"Dibujo {uniqueId} movido a nueva posición: (x: {position.x}, y: {position.y})");
+            Logger.LogInformation($"Dibujo {dibujoId} movido a nueva posición: (x: {position.x}, y: {position.y})");
 
             // Actualizar la posición en el modelo
-            await UpdateElementPositionAsync(uniqueId, dibujoId, position.x, position.y);
+            await UpdateElementPositionAsync(dibujoId, position.x, position.y);
 
             hiddenDibujoId = null;
             isDragging = false;
@@ -331,7 +331,8 @@ else
             StateHasChanged();
 
             // Se actualiza visualmente
-            await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{uniqueId}", position.x, position.y);
+            await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{dibujoId}", position.x, position.y);
+
         }
         else
         {
@@ -415,12 +416,13 @@ else
     private bool isUpdatingPosition = false;
 
 
-    [JSInvokable]
-    public async Task UpdateElementPositionAsync(int uniqueId, int dibujoId, int newX, int newY)
+    [JSInvokable("UpdateElementPositionAsync")]
+    public async Task UpdateElementPositionAsync(int dibujoId, int newX, int newY)
     {
+
         if (isUpdatingPosition)
         {
-            Logger.LogInformation($"Evitar bucles infinitos de {uniqueId}.");
+            Logger.LogInformation($"Evitar bucles infinitos de {dibujoId}.");
             return;
         }
 
@@ -431,29 +433,51 @@ else
         }
 
         isUpdatingPosition = true;
-        Logger.LogInformation($"Actualizando posición del elemento: DibujoID={dibujoId}, UniqueID={uniqueId}, X={newX}, Y={newY}");
+        Logger.LogInformation($"Invocado UpdateElementPositionAsync de .NET para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
+
 
         if (salonResponse?.mesas != null)
         {
-            var detalle = salonResponse.mesas.FirstOrDefault(m => m.mesa == uniqueId);
+            var detalle = salonResponse.mesas.FirstOrDefault(m => m.dibujos == dibujoId);
             if (detalle != null)
             {
+
+                // Verifica si la nueva posición es diferente a la actual antes de actualizar
                 int currentX = detalle.posicionX;
                 int currentY = detalle.posicionY;
 
                 if (newX != currentX || newY != currentY)
                 {
-                    Logger.LogInformation($"Actualizando elemento ID {uniqueId}: Actual X={currentX}, Actual Y={currentY}, Nueva X={newX}, Nueva Y={newY}");
 
-                    // Actualizar las posiciones
-                    detalle.posicionX = newX;
-                    detalle.posicionY = newY;
+                    Logger.LogInformation($"Actualizando dibujo ID {dibujoId}: Actual X={currentX}, Actual Y={currentY}, Nueva X={newX}, Nueva Y={newY}");
 
-                    StateHasChanged();
+                    // Validar y actualizar posición
+                    if (newX >= 0 && newY >= 0 && newX <= maxX && newY <= maxY)
+                    {
+                        detalle.posicionX = (int)newX;
+                        detalle.posicionY = (int)newY;
 
-                    // Actualiza la posición visualmente
-                    await JSRuntime.InvokeVoidAsync("updateElementPosition", $"dibujo-{uniqueId}", newX, newY);
+                        // Actualizar en la interfaz de usuario
+
+                        await JSRuntime.InvokeVoidAsync("updateElementPositionWithoutInvocation", $"dibujo-{dibujoId}", newX, newY);
+                        StateHasChanged();
+
+                    }
+                    else
+                    {
+                        Logger.LogWarning($"Coordenadas fuera de rango para dibujo ID {dibujoId}: (X: {newX}, Y: {newY})");
+                    }
                 }
+
+                else
+                {
+                    Logger.LogInformation($"La posición no cambió para el dibujo ID {dibujoId}. No se requiere actualización.");
+                }
+            }
+
+            else
+            {
+                Logger.LogWarning($"No se encontró un detalle para el dibujo con ID: {dibujoId}");
             }
         }
         isUpdatingPosition = false;
@@ -476,6 +500,53 @@ else
         // Lógica para eliminar el elemento de la base de datos
     }
 
+    [JSInvokable("AddNewElementAsync")]
+    public async Task AddNewElementAsync(int uniqueId, int dibujoId, int newX, int newY)
+    {
+        // Controla si ya se está procesando una actualización
+        if (isUpdatingPosition)
+        {
+            Logger.LogInformation($"Evitar bucles infinitos para el elemento único ID {uniqueId}.");
+            return;
+        }
+
+        // Verifica que las coordenadas sean válidas
+        if (newX < 0 || newY < 0)
+        {
+            Console.WriteLine($"Error: coordenadas no válidas - X: {newX}, Y: {newY}");
+            return;
+        }
+
+        isUpdatingPosition = true;
+        Logger.LogInformation($"Invocado AddNewElementAsync de .NET para el elemento ID {uniqueId}: (Dibujo ID: {dibujoId}, X: {newX}, Y: {newY})");
+
+        var elementId = $"dibujo-{dibujoId}";
+        Logger.LogInformation($"Verificando la existencia del elemento en el DOM con ID: {elementId}");
+
+        // Invocar la función JS para verificar la existencia del elemento antes de actualizar su posición
+        var elementExists = await JSRuntime.InvokeAsync<bool>("checkElementExists", elementId);
+
+        if (!elementExists)
+        {
+            Logger.LogWarning($"El elemento con ID {elementId} no se encontró en el DOM.");
+            return; // Salir si el elemento no existe
+        }
+
+        try 
+        {
+            // Actualiza la posición del elemento en el DOM
+            Logger.LogInformation("Invocando la función JS...");
+            await JSRuntime.InvokeVoidAsync("updateElementPositionWithoutInvocation", elementId, newX, newY);
+            Logger.LogInformation("Función JS invocada correctamente.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Error al invocar la función JS: {ex.Message}");
+        }
+
+        StateHasChanged();
+        isUpdatingPosition = false;
+    }
 
 }
 
@@ -508,11 +579,29 @@ else
         event.preventDefault();
     }
 
+    let uniqueIdCounter = 1; 
+
+    function getUniqueId(salonDetails) {
+        if (!salonDetails || salonDetails.length === 0) {
+            logMessage("Error: salonDetails no está definido o está vacío.");
+            return uniqueIdCounter = Math.floor(Date.now() / 1000);
+        }
+
+        let lastId = Math.max(...salonDetails.map(s => s.mesa));
+
+        // Incrementa el ID para el próximo uso
+        let newId = lastId + 1;
+
+        return newId;
+    }
+
     function drag(event) {
         event.stopPropagation(); // Previene el arrastre del contenedor padre.
+        logMessage('Arrastre iniciado');
         const isFromDrawingList = event.target.closest('.drawing-list') ? 'true' : 'false';
         event.dataTransfer.setData("is-from-drawing-list", isFromDrawingList); // Indica si el arrastre proviene del drawing-list.
         event.dataTransfer.setData("dibujo-id", event.target.getAttribute("data-dibujo-id"));
+        event.dataTransfer.setData("unique-id", event.target.getAttribute("data-unique-id")); 
         event.dataTransfer.setData("offsetX", event.clientX - event.target.getBoundingClientRect().left);
         event.dataTransfer.setData("offsetY", event.clientY - event.target.getBoundingClientRect().top);
     }
@@ -523,10 +612,9 @@ else
         const dibujoId = event.dataTransfer.getData("dibujo-id");
         const dibujoIdNumerico = parseInt(dibujoId.replace('dibujo-list-', ''), 10);
         if (isNaN(dibujoIdNumerico)) {
-            console.log(`Error: dibujoId no válido: ${dibujoId}`);
+            logMessage(`Error: dibujoId no válido: ${dibujoId}`);
             return;
         }
-        console.log(`Enhorabuena! dibujoId válido: ${dibujoIdNumerico}`);
 
         const isFromDrawingList = event.dataTransfer.getData("is-from-drawing-list");
         const offsetX = parseInt(event.dataTransfer.getData("offsetX"), 10);
@@ -536,35 +624,33 @@ else
 
         const element = document.querySelector(`#dibujo-list-${dibujoIdNumerico}`);
         if (element) {
-            console.log(`Enhorabuena! element válido: ${element}`);
+            logMessage(`Elemento creado con ID: ${element.id}`);
             const mapContainer = document.querySelector('.map-container');
             const containerRect = mapContainer.getBoundingClientRect();
 
             const adjustedX = Math.round(x - containerRect.left);
             const adjustedY = Math.round(y - containerRect.top);
 
-            let uniqueId = null;
+            let uniqueId; // Define uniqueId aquí
 
             if (isFromDrawingList === 'true') {
                 const zoomContainer = document.querySelector('.zoom-container');
 
-                // Clonar el elemento original
                 const clonedElement = element.cloneNode(true);
                 clonedElement.classList.add('drawing-item');
+                clonedElement.draggable = true;
 
-                // Asignar un nuevo ID único al clon (Asegúrate de que sea numérico)
-                uniqueId = Date.now();  // Usamos timestamp como único número
-                clonedElement.id = `dibujo-clone-${uniqueId}`;
+                uniqueId = Math.floor(Date.now() / 1000); // Genera un ID único
+
+                clonedElement.id = uniqueId;
 
                 console.log('Timestamp actual:', Date.now());
                 console.log('Nuevo ID del elemento clonado:', uniqueId);
 
-                // Establecer la posición del nuevo elemento en el zoom-container
                 clonedElement.style.position = 'absolute';
                 clonedElement.style.left = `${adjustedX}px`;
                 clonedElement.style.top = `${adjustedY}px`;
 
-                // Crear y añadir el botón de eliminar al clon
                 const deleteButton = document.createElement('button');
                 deleteButton.className = 'delete-button';
                 deleteButton.textContent = 'X';
@@ -573,25 +659,37 @@ else
                 };
                 clonedElement.appendChild(deleteButton);
 
-                // Añadir el nuevo elemento al zoom-container
                 zoomContainer.appendChild(clonedElement);
 
-                // Asegurarse de que el clon sea arrastrable
+                requestAnimationFrame(() => {
+                    clonedElement.style.left = `${adjustedX}px`;
+                    clonedElement.style.top = `${adjustedY}px`;
+                });
+
                 clonedElement.addEventListener("dragstart", drag);
             } else {
-                uniqueId = parseInt(element.id.replace('dibujo-', ''), 10);
+                uniqueId = getUniqueId(); // Si no es del drawing list, asigna el dibujoIdNumerico
             }
 
-            console.log('Invocando método Blazor con:', {
-                uniqueId: uniqueId,
+            logMessage('Invocando método Blazor con:', {
                 dibujoIdNumerico: dibujoIdNumerico,
                 adjustedX: adjustedX,
-                adjustedY: adjustedY
+                adjustedY: adjustedY,
+                uniqueId: uniqueId
             });
 
-            // Actualizar la posición del elemento en Blazor
-            dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
-                .catch(error => console.log(`Error al actualizar la posición: ${error}`));
+            if (dotNetRef) {
+                dotNetRef.invokeMethodAsync('AddNewElementAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
+                    .catch(error => logMessage(`Error al añadir el nuevo elemento: ${error}`));
+            } else {
+                logMessage("Error: DotNetRef no está definido.");
+                logMessage('Datos enviados:', {
+                    uniqueId: uniqueId,
+                    dibujoIdNumerico: dibujoIdNumerico,
+                    adjustedX: adjustedX,
+                    adjustedY: adjustedY
+                });
+            }
         }
     }
 
@@ -636,10 +734,9 @@ else
                         const newX = Math.round(rect.left - containerRect.left);
                         const newY = Math.round(rect.top - containerRect.top);
 
-                        logMessage(`Elemento ${elementId} con ${hiddenDibujoId} movido a X: ${newX}, Y: ${newY}`);
+                        logMessage(`Elemento ${elementId} movido a X: ${newX}, Y: ${newY}`);
 
-                        // Llamar a Blazor con los cuatro parámetros necesarios
-                        dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId), hiddenDibujoId, newX, newY)
+                        dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(elementId), newX, newY)
                             .catch(error => logMessage(`Error al actualizar la posición: ${error}`));
 
                         DotNet.invokeMethodAsync('RMSuit_v2', 'SetDraggingState', false)
@@ -659,7 +756,7 @@ else
                         element.style.left = `${newX}px`;
                         element.style.top = `${newY}px`;
 
-                        logMessage(`Moviendo elemento con ${hiddenDibujoId}: ${element.id}, X: ${newX}, Y: ${newY}`);
+                        logMessage(`Moviendo elemento: ${element.id}, X: ${newX}, Y: ${newY}`);
                     }
                 });
             } else {
@@ -720,9 +817,12 @@ else
 
     window.updateElementPositionWithoutInvocation = (elementId, newX, newY) => {
         const element = document.getElementById(elementId);
-        if (!element) return;
+        if (!element) {
+            logMessage(`Elemento no encontrado: ID=${elementId}`);
+            return;
+        };
 
-        logMessage(`updateElementPositionWithoutInvocation desde Javascript: ID=${elementId}, newX=${newX}, newY=${newY}`);
+        logMessage(`updateElementPositionWithoutInvocation antes de aplicar  y transformación desde Javascript: ID=${elementId}, newX=${newX}, newY=${newY}`);
 
         // Ajustar para que las posiciones no sean negativas ni fuera del contenedor
         newX = Math.max(0, newX);
@@ -741,6 +841,7 @@ else
         if (currentLeft !== newX || currentTop !== newY) {
             logMessage(`updateElementPositionWithoutInvocation desde Javascript: ID=${elementId}, newX=${newX}, newY=${newY}`);
 
+
             element.style.left = `${newX}px`;
             element.style.top = `${newY}px`;
 
@@ -749,11 +850,17 @@ else
             requestAnimationFrame(() => {
                 element.style.display = '';
             });
+
+
         } else {
             logMessage(`Posición ya actualizada, omitiendo la invocación para Elemento ID: ${elementId}`);
         }
     };
 
+    window.checkElementExists = (elementId) => {
+        const element = document.getElementById(elementId);
+        return element !== null;
+    };
 
 
 </script>
