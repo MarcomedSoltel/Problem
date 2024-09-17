@@ -632,7 +632,7 @@ else
         const x = event.clientX - offsetX;
         const y = event.clientY - offsetY;
 
-        const uniqueId = parseInt(event.dataTransfer.getData("unique-id"), 10);
+        const uniqueId = parseInt(event.dataTransfer.getData("unique-id"), 10); // Asegúrate de convertir a número
         const mapContainer = document.querySelector('.map-container');
         const containerRect = mapContainer.getBoundingClientRect();
 
@@ -648,7 +648,7 @@ else
                 clonedElement.classList.add('drawing-item');
                 clonedElement.draggable = true;
 
-                clonedElement.id = uniqueId;
+                clonedElement.setAttribute('data-unique-id', uniqueId); // Usa el mismo uniqueId
                 clonedElement.style.position = 'absolute';
                 clonedElement.style.left = `${adjustedX}px`;
                 clonedElement.style.top = `${adjustedY}px`;
@@ -664,24 +664,29 @@ else
 
                 // Añade el elemento clonado al zoom-container
                 zoomContainer.appendChild(clonedElement);
+
                 // Actualiza la posición del nuevo elemento en Blazor
                 if (dotNetRef) {
-                    dotNetRef.invokeMethodAsync('AddNewElementAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
-                        .catch(error => logMessage(`Error al añadir el nuevo elemento: ${error}`));
+                    dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', uniqueId, adjustedX, adjustedY)
+                        .catch(error => logMessage(`Error al actualizar la posición del elemento: ${error}`));
                 }
+            } else {
+                logMessage(`Error: No se encontró el elemento con ID dibujo-list-${dibujoIdNumerico}`);
             }
         } else {
             // Actualiza la posición del elemento existente
-            const zoomElement = Array.from(document.querySelectorAll('.drawing-item')).find(el => el.getAttribute('data-unique-id') == uniqueId);
+            const zoomElement = Array.from(document.querySelectorAll('.drawing-item')).find(el => parseInt(el.getAttribute('data-unique-id'), 10) === uniqueId);
             if (zoomElement) {
                 zoomElement.style.left = `${adjustedX}px`;
                 zoomElement.style.top = `${adjustedY}px`;
 
                 logMessage(`Elemento con ID ${uniqueId} movido a (${adjustedX}, ${adjustedY})`);
                 if (dotNetRef) {
-                    dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(uniqueId, 10), dibujoIdNumerico, adjustedX, adjustedY)
+                    dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
                         .catch(error => logMessage(`Error al actualizar la posición del elemento: ${error}`));
                 }
+            } else {
+                logMessage(`Error: No se encontró el elemento con ID uniqueId ${uniqueId}`);
             }
         }
     }
