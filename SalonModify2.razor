@@ -500,6 +500,50 @@ else
         // Lógica para eliminar el elemento de la base de datos
     }
 
+    [JSInvokable("AddNewElementAsync")]
+    public async Task AddNewElementAsync(int uniqueId, int dibujoId, int newX, int newY)
+    {
+        if (isUpdatingPosition)
+        {
+            Logger.LogInformation($"Evitar bucles infinitos para el elemento único ID {uniqueId}.");
+            return;
+        }
+
+        if (newX < 0 || newY < 0)
+        {
+            Console.WriteLine($"Error: coordenadas no válidas - X: {newX}, Y: {newY}");
+            return;
+        }
+
+        isUpdatingPosition = true;
+        Logger.LogInformation($"Invocado AddNewElementAsync de .NET para el elemento ID {uniqueId}: (Dibujo ID: {dibujoId}, X: {newX}, Y: {newY})");
+
+        var elementId = $"{uniqueId}";
+        Logger.LogInformation($"Verificando la existencia del elemento en el DOM con ID: {elementId}");
+
+        var elementExists = await JSRuntime.InvokeAsync<bool>("checkElementExists", elementId);
+
+        if (!elementExists)
+        {
+            Logger.LogWarning($"El elemento con ID {elementId} no se encontró en el DOM.");
+            isUpdatingPosition = false;
+            return; 
+        }
+
+        try 
+        {
+            Logger.LogInformation("Invocando la función JS...");
+            await JSRuntime.InvokeVoidAsync("updateElementPositionWithoutInvocation", elementId, newX, newY);
+            Logger.LogInformation("Función JS invocada correctamente.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Error al invocar la función JS: {ex.Message}");
+        }
+
+        StateHasChanged();
+        isUpdatingPosition = false;
+    }
 
 }
 
@@ -532,13 +576,44 @@ else
         event.preventDefault();
     }
 
+    let uniqueIdCounter = 1; 
+
+    function getUniqueId(salonDetails) {
+        if (!salonDetails || salonDetails.length === 0) {
+            logMessage("Error: salonDetails no está definido o está vacío.");
+            return uniqueIdCounter = Math.floor(Date.now() / 1000);
+        }
+
+        let lastId = Math.max(...salonDetails.map(s => s.mesa));
+
+        // Incrementa el ID para el próximo uso
+        let newId = lastId + 1;
+
+        return newId;
+    }
+
     function drag(event) {
         event.stopPropagation(); // Previene el arrastre del contenedor padre.
+        logMessage('Arrastre iniciado');
         const isFromDrawingList = event.target.closest('.drawing-list') ? 'true' : 'false';
         event.dataTransfer.setData("is-from-drawing-list", isFromDrawingList); // Indica si el arrastre proviene del drawing-list.
+
+        let uniqueId = event.target.getAttribute("data-unique-id");
+
+        if (!uniqueId && isFromDrawingList === 'true') {
+            // Genera un nuevo ID único solo si es un nuevo elemento del drawing-list.
+            uniqueId = Math.floor(Date.now() / 1000);
+            event.target.setAttribute("data-unique-id", uniqueId);
+            logMessage(`Generado nuevo uniqueId para el elemento: ${uniqueId}`);
+        }
+
+        // Almacena los datos
+        event.dataTransfer.setData("unique-id", uniqueId);
         event.dataTransfer.setData("dibujo-id", event.target.getAttribute("data-dibujo-id"));
         event.dataTransfer.setData("offsetX", event.clientX - event.target.getBoundingClientRect().left);
         event.dataTransfer.setData("offsetY", event.clientY - event.target.getBoundingClientRect().top);
+
+        logMessage(`Arrastrando elemento con uniqueId: ${uniqueId}, dibujoId: ${event.target.getAttribute("data-dibujo-id")}`);
     }
 
     function drop(event) {
@@ -550,7 +625,6 @@ else
             logMessage(`Error: dibujoId no válido: ${dibujoId}`);
             return;
         }
-        logMessage(`Enhorabuena! dibujoId válido: ${dibujoIdNumerico}`);
 
         const isFromDrawingList = event.dataTransfer.getData("is-from-drawing-list");
         const offsetX = parseInt(event.dataTransfer.getData("offsetX"), 10);
@@ -558,31 +632,28 @@ else
         const x = event.clientX - offsetX;
         const y = event.clientY - offsetY;
 
-        const element = document.querySelector(`#dibujo-list-${dibujoIdNumerico}`);
-        if (element) {
-            logMessage(`Enhorabuena! element válido: ${element}`);
-            const mapContainer = document.querySelector('.map-container');
-            const containerRect = mapContainer.getBoundingClientRect();
+        const uniqueId = parseInt(event.dataTransfer.getData("unique-id"), 10);
+        const mapContainer = document.querySelector('.map-container');
+        const containerRect = mapContainer.getBoundingClientRect();
 
-            const adjustedX = Math.round(x - containerRect.left);
-            const adjustedY = Math.round(y - containerRect.top);
+        const adjustedX = Math.round(x - containerRect.left);
+        const adjustedY = Math.round(y - containerRect.top);
 
-            if (isFromDrawingList === 'true') {
-                const zoomContainer = document.querySelector('.zoom-container');
+        if (isFromDrawingList === 'true') {
+            const zoomContainer = document.querySelector('.zoom-container');
+            const element = document.querySelector(`#dibujo-list-${dibujoIdNumerico}`);
 
+            if (element) {
                 const clonedElement = element.cloneNode(true);
                 clonedElement.classList.add('drawing-item');
+                clonedElement.draggable = true;
 
-                const newDibujoId = `dibujo-list-${Date.now()}`;
-                clonedElement.id = newDibujoId;
-
-                console.log('Timestamp actual:', Date.now());
-                console.log('Nuevo ID del elemento clonado:', newDibujoId);
-
+                clonedElement.id = uniqueId;
                 clonedElement.style.position = 'absolute';
                 clonedElement.style.left = `${adjustedX}px`;
                 clonedElement.style.top = `${adjustedY}px`;
 
+                // Botón de eliminar
                 const deleteButton = document.createElement('button');
                 deleteButton.className = 'delete-button';
                 deleteButton.textContent = 'X';
@@ -591,19 +662,27 @@ else
                 };
                 clonedElement.appendChild(deleteButton);
 
+                // Añade el elemento clonado al zoom-container
                 zoomContainer.appendChild(clonedElement);
-
-                clonedElement.addEventListener("dragstart", drag);
+                // Actualiza la posición del nuevo elemento en Blazor
+                if (dotNetRef) {
+                    dotNetRef.invokeMethodAsync('AddNewElementAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
+                        .catch(error => logMessage(`Error al añadir el nuevo elemento: ${error}`));
+                }
             }
+        } else {
+            // Actualiza la posición del elemento existente
+            const zoomElement = Array.from(document.querySelectorAll('.drawing-item')).find(el => el.getAttribute('data-unique-id') == uniqueId);
+            if (zoomElement) {
+                zoomElement.style.left = `${adjustedX}px`;
+                zoomElement.style.top = `${adjustedY}px`;
 
-            logMessage('Invocando método Blazor con:', {
-                dibujoIdNumerico: dibujoIdNumerico,
-                adjustedX: adjustedX,
-                adjustedY: adjustedY
-            });
-
-            dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', dibujoIdNumerico, adjustedX, adjustedY)
-                .catch(error => console.log(`Error al actualizar la posición: ${error}`));
+                logMessage(`Elemento con ID ${uniqueId} movido a (${adjustedX}, ${adjustedY})`);
+                if (dotNetRef) {
+                    dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', parseInt(uniqueId, 10), dibujoIdNumerico, adjustedX, adjustedY)
+                        .catch(error => logMessage(`Error al actualizar la posición del elemento: ${error}`));
+                }
+            }
         }
     }
 
@@ -619,6 +698,8 @@ else
             }
         }
     }
+
+
 
     window.initializeSortable = () => {
         const tryInitialize = () => {
@@ -731,7 +812,10 @@ else
 
     window.updateElementPositionWithoutInvocation = (elementId, newX, newY) => {
         const element = document.getElementById(elementId);
-        if (!element) return;
+        if (!element) {
+            logMessage(`Elemento no encontrado: ID=${elementId}`);
+            return;
+        };
 
         logMessage(`updateElementPositionWithoutInvocation antes de aplicar  y transformación desde Javascript: ID=${elementId}, newX=${newX}, newY=${newY}`);
 
@@ -768,7 +852,10 @@ else
         }
     };
 
-
+    window.checkElementExists = (elementId) => {
+        const element = document.getElementById(elementId);
+        return element !== null;
+    };
 
 
 </script>
