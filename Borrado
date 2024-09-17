@@ -503,14 +503,12 @@ else
     [JSInvokable("AddNewElementAsync")]
     public async Task AddNewElementAsync(int uniqueId, int dibujoId, int newX, int newY)
     {
-        // Controla si ya se está procesando una actualización
         if (isUpdatingPosition)
         {
             Logger.LogInformation($"Evitar bucles infinitos para el elemento único ID {uniqueId}.");
             return;
         }
 
-        // Verifica que las coordenadas sean válidas
         if (newX < 0 || newY < 0)
         {
             Console.WriteLine($"Error: coordenadas no válidas - X: {newX}, Y: {newY}");
@@ -520,21 +518,20 @@ else
         isUpdatingPosition = true;
         Logger.LogInformation($"Invocado AddNewElementAsync de .NET para el elemento ID {uniqueId}: (Dibujo ID: {dibujoId}, X: {newX}, Y: {newY})");
 
-        var elementId = $"dibujo-{dibujoId}";
+        var elementId = $"{uniqueId}";
         Logger.LogInformation($"Verificando la existencia del elemento en el DOM con ID: {elementId}");
 
-        // Invocar la función JS para verificar la existencia del elemento antes de actualizar su posición
         var elementExists = await JSRuntime.InvokeAsync<bool>("checkElementExists", elementId);
 
         if (!elementExists)
         {
             Logger.LogWarning($"El elemento con ID {elementId} no se encontró en el DOM.");
-            return; // Salir si el elemento no existe
+            isUpdatingPosition = false;
+            return; 
         }
 
         try 
         {
-            // Actualiza la posición del elemento en el DOM
             Logger.LogInformation("Invocando la función JS...");
             await JSRuntime.InvokeVoidAsync("updateElementPositionWithoutInvocation", elementId, newX, newY);
             Logger.LogInformation("Función JS invocada correctamente.");
@@ -600,98 +597,139 @@ else
         logMessage('Arrastre iniciado');
         const isFromDrawingList = event.target.closest('.drawing-list') ? 'true' : 'false';
         event.dataTransfer.setData("is-from-drawing-list", isFromDrawingList); // Indica si el arrastre proviene del drawing-list.
+
+        let uniqueId = event.target.getAttribute("data-unique-id");
+
+        if (!uniqueId) {
+            // Si el elemento no tiene un uniqueId, generar uno (solo si es desde el drawing-list)
+            if (isFromDrawingList === 'true') {
+                uniqueId = Math.floor(Date.now() / 1000); // Genera un nuevo ID único basado en el tiempo
+                event.target.setAttribute("data-unique-id", uniqueId); // Asigna el uniqueId al elemento
+                logMessage(`Generado nuevo uniqueId para el elemento: ${uniqueId}`);
+            } else {
+                logMessage(`Error: uniqueId no válido para el elemento en el zoom-container con ID: ${event.target.getAttribute("data-dibujo-id")}`);
+            }
+        } else {
+            logMessage(`Arrastrando elemento existente con uniqueId: ${uniqueId}`);
+        }
+
+        // Almacena los datos
+        event.dataTransfer.setData("unique-id", uniqueId);
         event.dataTransfer.setData("dibujo-id", event.target.getAttribute("data-dibujo-id"));
-        event.dataTransfer.setData("unique-id", event.target.getAttribute("data-unique-id")); 
         event.dataTransfer.setData("offsetX", event.clientX - event.target.getBoundingClientRect().left);
         event.dataTransfer.setData("offsetY", event.clientY - event.target.getBoundingClientRect().top);
+
+        logMessage(`Arrastrando elemento con uniqueId: ${uniqueId}, dibujoId: ${event.target.getAttribute("data-dibujo-id")}`);
     }
 
     function drop(event) {
-        event.preventDefault();
+    event.preventDefault();
 
-        const dibujoId = event.dataTransfer.getData("dibujo-id");
-        const dibujoIdNumerico = parseInt(dibujoId.replace('dibujo-list-', ''), 10);
-        if (isNaN(dibujoIdNumerico)) {
-            logMessage(`Error: dibujoId no válido: ${dibujoId}`);
-            return;
-        }
+    const dibujoId = event.dataTransfer.getData("dibujo-id");
+    const dibujoIdNumerico = parseInt(dibujoId.replace('dibujo-list-', ''), 10);
+    if (isNaN(dibujoIdNumerico)) {
+        logMessage(`Error: dibujoId no válido: ${dibujoId}`);
+        return;
+    }
 
-        const isFromDrawingList = event.dataTransfer.getData("is-from-drawing-list");
-        const offsetX = parseInt(event.dataTransfer.getData("offsetX"), 10);
-        const offsetY = parseInt(event.dataTransfer.getData("offsetY"), 10);
-        const x = event.clientX - offsetX;
-        const y = event.clientY - offsetY;
+    const isFromDrawingList = event.dataTransfer.getData("is-from-drawing-list");
+    const offsetX = parseInt(event.dataTransfer.getData("offsetX"), 10);
+    const offsetY = parseInt(event.dataTransfer.getData("offsetY"), 10);
+    const x = event.clientX - offsetX;
+    const y = event.clientY - offsetY;
 
-        const element = document.querySelector(`#dibujo-list-${dibujoIdNumerico}`);
-        if (element) {
-            logMessage(`Elemento creado con ID: ${element.id}`);
-            const mapContainer = document.querySelector('.map-container');
-            const containerRect = mapContainer.getBoundingClientRect();
+    const element = document.querySelector(`#dibujo-list-${dibujoIdNumerico}`);
+    if (element) {
+        logMessage(`Elemento creado con ID: ${element.id}`);
+        const mapContainer = document.querySelector('.map-container');
+        const containerRect = mapContainer.getBoundingClientRect();
 
-            const adjustedX = Math.round(x - containerRect.left);
-            const adjustedY = Math.round(y - containerRect.top);
+        const adjustedX = Math.round(x - containerRect.left);
+        const adjustedY = Math.round(y - containerRect.top);
 
-            let uniqueId; // Define uniqueId aquí
+        let uniqueId;
 
-            if (isFromDrawingList === 'true') {
-                const zoomContainer = document.querySelector('.zoom-container');
+        if (isFromDrawingList === 'true') {
+            const zoomContainer = document.querySelector('.zoom-container');
 
-                const clonedElement = element.cloneNode(true);
-                clonedElement.classList.add('drawing-item');
-                clonedElement.draggable = true;
+            const clonedElement = element.cloneNode(true);
+            clonedElement.classList.add('drawing-item');
+            clonedElement.draggable = true;
 
-                uniqueId = Math.floor(Date.now() / 1000); // Genera un ID único
+            // Genera un ID único (uniqueId) para el elemento clonado
+            uniqueId = Math.floor(Date.now() / 1000);
 
-                clonedElement.id = uniqueId;
+            // Asigna este uniqueId al elemento clonado
+            clonedElement.id = uniqueId;
 
-                console.log('Timestamp actual:', Date.now());
-                console.log('Nuevo ID del elemento clonado:', uniqueId);
+            console.log('Timestamp actual:', Date.now());
+            console.log('Nuevo ID del elemento clonado:', uniqueId);
 
-                clonedElement.style.position = 'absolute';
+            clonedElement.style.position = 'absolute';
+            clonedElement.style.left = `${adjustedX}px`;
+            clonedElement.style.top = `${adjustedY}px`;
+
+            // Botón de eliminar para el elemento clonado
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'delete-button';
+            deleteButton.textContent = 'X';
+            deleteButton.onclick = function () {
+                zoomContainer.removeChild(clonedElement);
+            };
+            clonedElement.appendChild(deleteButton);
+
+            // Añade el elemento clonado al zoom-container
+            zoomContainer.appendChild(clonedElement);
+
+            requestAnimationFrame(() => {
                 clonedElement.style.left = `${adjustedX}px`;
                 clonedElement.style.top = `${adjustedY}px`;
-
-                const deleteButton = document.createElement('button');
-                deleteButton.className = 'delete-button';
-                deleteButton.textContent = 'X';
-                deleteButton.onclick = function () {
-                    zoomContainer.removeChild(clonedElement);
-                };
-                clonedElement.appendChild(deleteButton);
-
-                zoomContainer.appendChild(clonedElement);
-
-                requestAnimationFrame(() => {
-                    clonedElement.style.left = `${adjustedX}px`;
-                    clonedElement.style.top = `${adjustedY}px`;
-                });
-
-                clonedElement.addEventListener("dragstart", drag);
-            } else {
-                uniqueId = getUniqueId(); // Si no es del drawing list, asigna el dibujoIdNumerico
-            }
-
-            logMessage('Invocando método Blazor con:', {
-                dibujoIdNumerico: dibujoIdNumerico,
-                adjustedX: adjustedX,
-                adjustedY: adjustedY,
-                uniqueId: uniqueId
             });
 
-            if (dotNetRef) {
-                dotNetRef.invokeMethodAsync('AddNewElementAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
-                    .catch(error => logMessage(`Error al añadir el nuevo elemento: ${error}`));
-            } else {
-                logMessage("Error: DotNetRef no está definido.");
-                logMessage('Datos enviados:', {
-                    uniqueId: uniqueId,
-                    dibujoIdNumerico: dibujoIdNumerico,
-                    adjustedX: adjustedX,
-                    adjustedY: adjustedY
-                });
+            // Añade el evento dragstart al nuevo elemento clonado
+            clonedElement.addEventListener("dragstart", drag);
+        } else {
+            console.log('IsFromDrawingList es false');
+
+            const uniqueId = parseInt(event.dataTransfer.getData("uniqueId"), 10); // Obtén el uniqueId almacenado al arrastrar
+            const zoomElement = document.querySelector(`#${uniqueId}`); // Busca el elemento por el uniqueId, no por el dibujoId
+
+            if (zoomElement) {
+                zoomElement.style.left = `${adjustedX}px`;
+                zoomElement.style.top = `${adjustedY}px`;
+
+                logMessage(`Elemento con ID ${uniqueId} movido a (${adjustedX}, ${adjustedY})`);
+
+                // Actualiza la posición del elemento en Blazor
+                if (dotNetRef) {
+                    dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
+                        .catch(error => logMessage(`Error al actualizar la posición del elemento: ${error}`));
+
+                }
             }
+       }
+        logMessage('Invocando método Blazor con:', {
+            dibujoIdNumerico: dibujoIdNumerico,
+            adjustedX: adjustedX,
+            adjustedY: adjustedY,
+            uniqueId: uniqueId
+        });
+
+        // Llama al método Blazor con el uniqueId correcto
+        if (dotNetRef) {
+            dotNetRef.invokeMethodAsync('AddNewElementAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
+                .catch(error => logMessage(`Error al añadir el nuevo elemento: ${error}`));
+        } else {
+            logMessage("Error: DotNetRef no está definido.");
+            logMessage('Datos enviados:', {
+                uniqueId: uniqueId,
+                dibujoIdNumerico: dibujoIdNumerico,
+                adjustedX: adjustedX,
+                adjustedY: adjustedY
+            });
         }
     }
+}
 
     function deleteElement(elementId) {
         const element = document.getElementById(elementId);
@@ -705,6 +743,8 @@ else
             }
         }
     }
+
+
 
     window.initializeSortable = () => {
         const tryInitialize = () => {
