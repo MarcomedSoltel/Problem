@@ -65,6 +65,34 @@
             margin-bottom: 10px;
         }
 
+    .modal {
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .modal-content {
+        background-color: #fff;
+        padding: 20px;
+        border-radius: 5px;
+        position: relative;
+        width: 300px;
+    }
+
+    .close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        font-size: 20px;
+        cursor: pointer;
+    }
 
 </style>
 
@@ -138,7 +166,7 @@ else
         </div>
 
         <div class="options-panel" id="optionsPanel">
-            <button onclick="performAction('articulos')">Artículos</button>
+            <button @onclick="LoadEmployees">Artículos</button>
             <button onclick="performAction('facturar')">Facturar</button>
             <button onclick="performAction('facturarRápido')">Facturar rápido</button>
             <button onclick="performAction('cobro')">Cobro</button>
@@ -149,12 +177,33 @@ else
             <button onclick="performAction('modificador')">Modificador</button>
         </div>
     </div>
+
+    <div id="employeeModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2>Lista de Empleados</h2>
+            @if (employees != null && employees.Any())
+            {
+                <ul>
+                    @foreach (var employee in employees)
+                    {
+                        <li>@employee.nombre</li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p>No hay empleados disponibles.</p>
+            }
+        </div>
+    </div>
 }
 
 @code {
     [Parameter] public int id { get; set; }
     private SalonResponse? salonResponse;
     private double ratioPantalla = 1.0;
+    private List<Employee>? employees;
 
     protected override async Task OnInitializedAsync()
     {
@@ -206,6 +255,44 @@ else
     {
         return await JSRuntime.InvokeAsync<double>("calculateScreenRatio", Array.Empty<object>());
     }
+
+    private async Task LoadEmployees()
+    {
+        try
+        {
+            using var client = new HttpClient(new HttpClientHandler
+                {
+                    ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+                });
+
+            var url = "https://37.59.32.58:1380/Master/Employees/GetEmployees?initialCatalog=ELSIFON";
+            var response = await client.GetStringAsync(url);
+
+            var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    PropertyNameCaseInsensitive = true
+                };
+
+            employees = JsonSerializer.Deserialize<List<Employee>>(response, options);
+
+            if (employees != null)
+            {
+                Logger.LogInformation("Empleados cargados correctamente.");
+            }
+            else
+            {
+                Logger.LogWarning("No se encontraron empleados en la respuesta.");
+            }
+
+            // Mostrar el modal
+            await JSRuntime.InvokeVoidAsync("openModal");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error al cargar los empleados.");
+        }
+    }
 }
 
 <script>
@@ -245,6 +332,14 @@ else
         } else {
             alert('Ningún elemento seleccionado');
         }
+    }
+
+    function openModal() {
+        document.getElementById('employeeModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('employeeModal').style.display = 'none';
     }
 
 </script>
