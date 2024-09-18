@@ -600,11 +600,13 @@ else
 
         let uniqueId = event.target.getAttribute("data-unique-id");
 
-        if (!uniqueId && isFromDrawingList === 'true') {
+        if (isFromDrawingList === 'true') {
             // Genera un nuevo ID único solo si es un nuevo elemento del drawing-list.
             uniqueId = Math.floor(Date.now() / 1000);
             event.target.setAttribute("data-unique-id", uniqueId);
             logMessage(`Generado nuevo uniqueId para el elemento: ${uniqueId}`);
+        } else {
+            logMessage(`Arrastrando elemento existente con uniqueId: ${uniqueId}`);
         }
 
         // Almacena los datos
@@ -682,7 +684,7 @@ else
 
                 logMessage(`Elemento con ID ${uniqueId} movido a (${adjustedX}, ${adjustedY})`);
                 if (dotNetRef) {
-                    dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', uniqueId, dibujoIdNumerico, adjustedX, adjustedY)
+                    dotNetRef.invokeMethodAsync('UpdateElementPositionAsync', uniqueId, adjustedX, adjustedY)
                         .catch(error => logMessage(`Error al actualizar la posición del elemento: ${error}`));
                 }
             } else {
