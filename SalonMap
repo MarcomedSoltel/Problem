@@ -187,7 +187,10 @@ else
                 <ul>
                     @foreach (var employee in employees)
                     {
-                        <li>@employee.nombre</li>
+                        <li>
+                            <input type="checkbox" id="employee-@employee.empleado1" value="@employee.empleado1" />
+                            <label for="employee-@employee.empleado1">@employee.nombre</label>
+                        </li>
                     }
                 </ul>
             }
@@ -195,6 +198,7 @@ else
             {
                 <p>No hay empleados disponibles.</p>
             }
+            <button onclick="saveSelection()">Guardar</button>
         </div>
     </div>
 }
@@ -340,6 +344,19 @@ else
 
     function closeModal() {
         document.getElementById('employeeModal').style.display = 'none';
+    }
+
+    function saveSelection() {
+        const selectedIds = [];
+        document.querySelectorAll('#employeeModal input[type="checkbox"]:checked').forEach(checkbox => {
+            selectedIds.push(checkbox.value);
+        });
+
+        // Aquí podrías enviar los IDs seleccionados al servidor o realizar otra acción
+
+        // Mostrar el mensaje de éxito
+        alert('Artículo guardado con éxito.');
+        closeModal(); // Cierra el modal después de guardar
     }
 
 </script>
