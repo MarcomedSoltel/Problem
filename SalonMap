@@ -1,0 +1,250 @@
+@page "/salonmapa/{id:int}"
+@inject NavigationManager Navigation
+@inject ILogger<SalonMap> Logger
+@inject IJSRuntime JSRuntime
+@inject IStringLocalizer<SalonMap> Localizer
+
+
+@using System.Text.Json
+@using System.Net.Http
+@using System.Net.Http.Headers
+@using RMSuit_v2.Models
+@using Microsoft.JSInterop
+
+<style>
+    .map-container {
+        position: relative;
+        width: 80%;
+        height: 500px;
+        border: 1px solid #ccc;
+        overflow: hidden;
+        background-color: #b8b8b8;
+    }
+
+    .zoom-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        transform-origin: top left;
+        transition: transform 0.3s;
+    }
+
+
+
+    .drawing-item {
+        position: absolute;
+        width: 100px;
+        height: 100px;
+    }
+
+        .drawing-item img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+        }
+
+
+    .options-panel {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 20%;
+        height: 100%;
+        background-color: #f4f4f4;
+        border-left: 1px solid #ccc;
+        display: none;
+        padding: 10px;
+    }
+
+        .options-panel button {
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+
+</style>
+
+
+<PageTitle>@Localizer["RestaurantMap"]</PageTitle>
+
+<h3>@Localizer["InteractiveMap"]</h3>
+
+@if (salonResponse == null)
+{
+    <p>@Localizer["LoadDetails"]</p>
+}
+else
+{
+    <div class="map-container">
+        <div class="zoom-container" style="transform: scale(1);">
+            @if (salonResponse != null && salonResponse.dibujos != null && salonResponse.dibujos.Any())
+            {
+                var orderedDrawings = salonResponse.dibujos
+                .OrderBy(d => d.estado == "D")
+                .ThenBy(d => d.estado)
+                .ToList();
+
+                var occupiedPositions = new HashSet<(int, int)>();
+
+                @foreach (var dibujo in orderedDrawings)
+                {
+                    var salonDetails = salonResponse.mesas
+                    .Where(m => m.dibujos == dibujo.dibujos)
+                    .ToList();
+
+                    foreach (var salonDetail in salonDetails)
+                    {
+                        int adjustedLeft = (int)(salonDetail.posicionX);
+                        int adjustedTop = (int)(salonDetail.posicionY);
+
+                        int ratioAdjustedTop = (int)(adjustedTop * ratioPantalla);
+                        int ratioAdjustedLeft = (int)(adjustedLeft * ratioPantalla);
+
+                        var adjustedPosition = (ratioAdjustedTop, ratioAdjustedLeft);
+
+                        Logger.LogInformation($"ID Dibujo: {dibujo.dibujos}, Estado: {dibujo.estado}, Posición Ajustada: (top: {adjustedTop}, left: {adjustedLeft}), Ratio: {ratioPantalla}");
+
+                        if (dibujo.estado == "D" || !occupiedPositions.Contains(adjustedPosition))
+                        {
+                            //Logger.LogInformation($"Procesando dibujo con ID: {dibujo.dibujos}, Posición: (top: {adjustedPosition.Item1}, left: {adjustedPosition.Item2})");
+                            occupiedPositions.Add(adjustedPosition);
+
+                            <div class="drawing-item"
+                                 data-id="@salonDetail.mesa"
+                                 style="top:@(adjustedPosition.Item1 + "px"); left:@(adjustedPosition.Item2 + "px");"
+                                 onclick="showOptionsPanel('@salonDetail.mesa')">
+                                @if (!string.IsNullOrEmpty(dibujo.grafico))
+                                {
+                                    Logger.LogInformation($"Procesando dibujo con ID {salonDetail.mesa} con el ID del dibujo: {dibujo.dibujos}, Posición: (top: {adjustedPosition.Item1}, left: {adjustedPosition.Item2})");
+                                    <img src="data:image/jpeg;base64,@dibujo.grafico" alt="@dibujo.estado" />
+                                }
+                                else
+                                {
+                                    <p>@Localizer["NoImage"]</p>
+                                }
+                            </div>
+                        }
+                    }
+                }
+            }
+            else
+            {
+                <p>@Localizer["NoPaint"]</p>
+            }
+        </div>
+
+        <div class="options-panel" id="optionsPanel">
+            <button onclick="performAction('articulos')">Artículos</button>
+            <button onclick="performAction('facturar')">Facturar</button>
+            <button onclick="performAction('facturarRápido')">Facturar rápido</button>
+            <button onclick="performAction('cobro')">Cobro</button>
+            <button onclick="performAction('cobroRápido')">Cobro rápido</button>
+            <button onclick="performAction('anularCuenta')">Anular cuenta</button>
+            <button onclick="performAction('comanda')">Comanda</button>
+            <button onclick="performAction('lineal')">Lineal</button>
+            <button onclick="performAction('modificador')">Modificador</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int id { get; set; }
+    private SalonResponse? salonResponse;
+    private double ratioPantalla = 1.0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSalonDetail();
+    }
+
+    private async Task LoadSalonDetail()
+    {
+        try
+        {
+            using var client = new HttpClient(new HttpClientHandler
+                {
+                    ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+                });
+
+            var url = $"https://37.59.32.58:1380/Master/Salons/GetSalonDetail/{id}?includeDrawings=true&initialCatalog=ELSIFON";
+            var response = await client.GetStringAsync(url);
+            //            Logger.LogInformation($"Respuesta JSON: {response}");
+
+            var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    PropertyNameCaseInsensitive = true
+                };
+
+            salonResponse = JsonSerializer.Deserialize<SalonResponse>(response, options);
+            if (salonResponse != null)
+            {
+
+
+                //Logger.LogInformation($"Detalles del salón: {JsonSerializer.Serialize(salonResponse)}");
+                //              Logger.LogInformation($"Salon: {JsonSerializer.Serialize(salonResponse.salon)}");
+                //              Logger.LogInformation($"Mesas: {JsonSerializer.Serialize(salonResponse.mesas)}");
+                //              Logger.LogInformation($"Dibujos: {JsonSerializer.Serialize(salonResponse.dibujos)}");
+                Logger.LogInformation("Detalles del salón cargados correctamente.");
+            }
+            else
+            {
+                Logger.LogWarning("No se encontró el salón en la respuesta.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error al cargar los detalles del salón.");
+        }
+    }
+
+    private async Task<double> CalculateScreenRatio()
+    {
+        return await JSRuntime.InvokeAsync<double>("calculateScreenRatio", Array.Empty<object>());
+    }
+}
+
+<script>
+
+    let currentSelectedId = null;
+
+
+    window.calculateScreenRatio = () => {
+        let width = window.innerWidth;
+        let height = window.innerHeight;
+        let ratio = 1.0;
+        let baseWidth = 1920;
+        let baseHeight = 1080;
+
+        ratio = Math.min(width / baseWidth, height / baseHeight);
+        return ratio;
+    };
+
+    function showOptionsPanel(id) {
+        const panel = document.getElementById('optionsPanel');
+
+        if (currentSelectedId !== id) {
+            // Cambia el elemento seleccionado
+            currentSelectedId = id;
+            panel.style.display = 'block'; // Muestra el panel si está oculto
+            console.log('Elemento clickeado con ID:', id);
+        } else {
+            // Si se hace clic en el mismo elemento, oculta el panel
+            panel.style.display = 'none';
+            currentSelectedId = null;
+        }
+    }
+
+    function performAction(action) {
+        if (currentSelectedId) {
+            alert('Acción: ' + action + ', para el elemento con ID: ' + currentSelectedId);
+        } else {
+            alert('Ningún elemento seleccionado');
+        }
+    }
+
+</script>
