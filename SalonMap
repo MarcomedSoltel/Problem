@@ -347,16 +347,27 @@ else
     }
 
     function saveSelection() {
-        const selectedIds = [];
+        const selectedEmployees = [];
+
+        // Recorre todos los checkboxes seleccionados
         document.querySelectorAll('#employeeModal input[type="checkbox"]:checked').forEach(checkbox => {
-            selectedIds.push(checkbox.value);
+            const employeeId = checkbox.value;
+            const employeeName = checkbox.nextElementSibling.textContent;
+            selectedEmployees.push({ id: employeeId, name: employeeName });
         });
 
-        // Aquí podrías enviar los IDs seleccionados al servidor o realizar otra acción
+        // Generar el mensaje de éxito con los IDs y nombres de los empleados seleccionados
+        if (selectedEmployees.length > 0) {
+            let message = 'Artículo guardado con éxito.\n\nEmpleados seleccionados:\n';
+            selectedEmployees.forEach(emp => {
+                message += `- ID: ${emp.id}, Nombre: ${emp.name}\n`;
+            });
+            alert(message);
+        } else {
+            alert('No se seleccionó ningún empleado.');
+        }
 
-        // Mostrar el mensaje de éxito
-        alert('Artículo guardado con éxito.');
-        closeModal(); // Cierra el modal después de guardar
+        closeModal();
     }
 
 </script>
