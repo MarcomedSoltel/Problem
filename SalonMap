@@ -195,6 +195,7 @@ else
                                 <li>
                                     <input type="checkbox" id="employee-@employee.empleado1" value="@employee.empleado1" />
                                     <label for="employee-@employee.empleado1">@employee.nombre</label>
+                                    <input type="number" min="1" value="1" class="quantity-input" />
                                 </li>
                             }
                         </ul>
@@ -362,54 +363,68 @@ else
         document.getElementById('employeeModal').style.display = 'none';
     }
 
-    // Mover empleados seleccionados a la lista de seleccionados
     function moveToSelected() {
         const selected = [];
+        let uniqueIdCounter = Date.now(); // Usar un contador único basado en la hora actual
+
         document.querySelectorAll('#employeeModal input[type="checkbox"]:checked').forEach(checkbox => {
             const employeeId = checkbox.value;
             const employeeName = checkbox.nextElementSibling.textContent;
-            selected.push({ id: employeeId, name: employeeName });
-            selectedEmployees.push({ id: employeeId, name: employeeName });
+            const quantityInput = checkbox.closest('li').querySelector('.quantity-input');
+            const quantity = parseInt(quantityInput?.value) || 1;
+
+            for (let i = 0; i < quantity; i++) {
+                const uniqueId = uniqueIdCounter++;
+                selected.push({ id: employeeId, name: employeeName, uniqueId: uniqueId });
+                selectedEmployees.push({ id: employeeId, name: employeeName, uniqueId: uniqueId });
+            }
         });
 
         const selectedList = document.getElementById('selectedList');
         selected.forEach(emp => {
             const listItem = document.createElement('li');
-            listItem.setAttribute('data-id', emp.id);
-
+            listItem.setAttribute('data-id', emp.uniqueId);
             // Añadir un checkbox a cada elemento de la lista
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.value = emp.id;
-
+            checkbox.value = emp.uniqueId;
             // Añadir texto de empleado junto con el checkbox
             const label = document.createElement('label');
             label.textContent = `${emp.name} (ID: ${emp.id})`;
-
-            // Añadir el checkbox y el texto al item de la lista
             listItem.appendChild(checkbox);
             listItem.appendChild(label);
             selectedList.appendChild(listItem);
         });
 
-        // Limpiar selección original
         document.querySelectorAll('#employeeModal input[type="checkbox"]:checked').forEach(checkbox => {
             checkbox.checked = false;
         });
+        updateSelectedEmployees();
     }
 
-    // Eliminar empleados seleccionados de la lista
+    function updateSelectedEmployees() {
+        const selectedList = document.getElementById('selectedList');
+        const items = selectedList.querySelectorAll('li');
+        selectedEmployees = [];
+
+        items.forEach(item => {
+            const uniqueId = item.getAttribute('data-id');
+            const employeeId = item.querySelector('label').textContent.match(/ID: (\d+)/)[1];
+            const employeeName = item.querySelector('label').textContent.split(' (ID: ')[0];
+
+            selectedEmployees.push({ id: employeeId, name: employeeName, uniqueId: uniqueId });
+        });
+    }
+
     function removeSelected() {
         const selectedList = document.getElementById('selectedList');
         const checkboxes = selectedList.querySelectorAll('input[type="checkbox"]:checked');
 
         checkboxes.forEach(checkbox => {
-            const employeeId = checkbox.value;
-            // Filtrar la lista de empleados seleccionados
-            selectedEmployees = selectedEmployees.filter(emp => emp.id !== employeeId);
-            // Eliminar el elemento de la lista
+            const uniqueId = checkbox.value;
             const listItem = checkbox.parentElement;
             selectedList.removeChild(listItem);
+            updateSelectedEmployees();
         });
     }
 
